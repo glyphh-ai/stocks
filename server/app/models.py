@@ -142,12 +142,39 @@ class Trade(Base):
     exit_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("glyph_version.id", ondelete="SET NULL"), nullable=True
     )
-    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)  # gross
+
+    # Platform costs, snapshotted from settings at the time of each leg. net_pnl
+    # is the gross pnl less both legs' fees, set when the trade closes.
+    entry_fee: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    exit_fee: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    net_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AppSettings(Base):
+    """Singleton (id=1) application settings.
+
+    Trade-fee config mirrors how a brokerage charges, applied per leg: a flat
+    commission, a per-share rate, and a percent of notional. Net P&L on each
+    trade subtracts the resulting entry and exit fees from the gross.
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    commission_per_trade: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default="0"
+    )
+    per_share: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    percent: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

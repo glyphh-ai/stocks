@@ -21,6 +21,7 @@ from ..analysis import analyze_trade
 from ..db import PgSession
 from ..models import Trade
 from ..storage import version_at_ts
+from ..store_settings import get_settings, leg_fee
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -57,6 +58,9 @@ class TradeOut(BaseModel):
     exit_price: float | None
     exit_version_id: int | None
     pnl: float | None
+    entry_fee: float
+    exit_fee: float
+    net_pnl: float | None
     notes: str | None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -76,6 +80,9 @@ def open_trade(payload: TradeOpen) -> TradeOut:
         raise HTTPException(400, "side must be 'long' or 'short'")
     session = PgSession()
     try:
+        entry_fee = leg_fee(
+            get_settings(session), payload.entry_price, payload.volume
+        )
         trade = Trade(
             symbol=payload.symbol.upper(),
             interval=payload.interval,
@@ -88,6 +95,7 @@ def open_trade(payload: TradeOpen) -> TradeOut:
             entry_version_id=version_at_ts(
                 session, payload.symbol.upper(), payload.interval, payload.entry_ts
             ),
+            entry_fee=entry_fee,
             notes=payload.notes,
         )
         session.add(trade)
@@ -114,6 +122,12 @@ def close_trade(trade_id: int, payload: TradeClose) -> TradeOut:
         )
         trade.pnl = _pnl(
             trade.side, trade.entry_price, payload.exit_price, trade.volume
+        )
+        trade.exit_fee = leg_fee(
+            get_settings(session), payload.exit_price, trade.volume
+        )
+        trade.net_pnl = round(
+            trade.pnl - (trade.entry_fee or 0.0) - trade.exit_fee, 2
         )
         trade.status = "closed"
         if payload.notes:
