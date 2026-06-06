@@ -46,6 +46,48 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const fetcher = <T>(path: string) => http<T>(path);
 
+export type ReplayEvent =
+  | { event: "reset"; versions_removed: number; bars: number }
+  | { event: "bar"; index: number; total: number; ts: string; version_id: number }
+  | { event: "prediction"; target_ts: string; confidence: number; rows: number }
+  | { event: "ahead"; target_ts: string; confidence: number }
+  | { event: "error"; index: number; ts: string; detail: string }
+  | { event: "done"; versions: number; history_rows: number };
+
+// Stream the replay endpoint's SSE events to `onEvent`. SSE over POST can't use
+// EventSource (GET-only), so we read the response body and split on "\n\n".
+async function replayStream(
+  body: Record<string, unknown>,
+  onEvent: (e: ReplayEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/jobs/replay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const line = frame.split("\n").find((l) => l.startsWith("data:"));
+      if (line) onEvent(JSON.parse(line.slice(5).trim()) as ReplayEvent);
+    }
+  }
+}
+
 export function seriesUrl(
   symbol: string,
   interval: string,
@@ -102,6 +144,26 @@ export const api = {
   predict: (symbol: string, interval: string) =>
     http<PredictionResponse>(
       `/predict?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
+
+  // Reset all data and rebuild it tick by tick, streaming progress as SSE.
+  replay: (
+    symbol: string,
+    interval: string,
+    opts: { range?: string; withLlmAhead?: boolean; removeTrades?: boolean },
+    onEvent: (e: ReplayEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    replayStream(
+      {
+        symbol,
+        interval,
+        range: opts.range ?? "6mo",
+        with_llm_ahead: opts.withLlmAhead ?? true,
+        remove_trades: opts.removeTrades ?? false,
+      },
+      onEvent,
+      signal,
     ),
 
   clearHistory: (symbol: string, interval: string, removeTrades: boolean) =>

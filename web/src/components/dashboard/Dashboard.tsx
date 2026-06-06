@@ -79,6 +79,10 @@ export function Dashboard() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
+  const [replaying, setReplaying] = useState(false);
+  const [replayProgress, setReplayProgress] = useState<{ done: number; total: number } | null>(null);
+  const [replayError, setReplayError] = useState<string | null>(null);
+
   const [predicting, setPredicting] = useState(false);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [backtesting, setBacktesting] = useState(false);
@@ -192,26 +196,50 @@ export function Dashboard() {
     return [...actual, ...predicted];
   }, [seriesData, predSeriesData]);
 
-  // Always (re)run the prediction when the chart loads a symbol/interval. The
-  // LLM nudge only shapes the forward row, so load uses the fast no-LLM rebuild;
-  // a full LLM-influenced refresh fires on Run now.
-  useEffect(() => {
+  // Reset everything and rebuild the symbol's history tick by tick, projecting
+  // each next step as the historic vectors load. This is a deliberate action —
+  // nothing auto-refreshes on page load, so a replay is a clean, reproducible
+  // walk-forward proof.
+  const resetReplay = async () => {
     if (!symbol) return;
-    let alive = true;
+    if (
+      !window.confirm(
+        `Delete ALL data for ${symbol} (${interval}) and rebuild it tick by tick? This wipes glyph history and predictions.`,
+      )
+    )
+      return;
+    setReplaying(true);
+    setReplayError(null);
+    setReplayProgress({ done: 0, total: 0 });
     setPredRefreshing(true);
-    api
-      .refreshPredictions(symbol, interval, false)
-      .then(() => {
-        if (!alive) return;
-        mutatePredPaths();
-        mutatePredSeries();
-      })
-      .catch(() => {})
-      .finally(() => alive && setPredRefreshing(false));
-    return () => {
-      alive = false;
-    };
-  }, [symbol, interval, mutatePredPaths, mutatePredSeries]);
+    try {
+      await api.replay(symbol, interval, { withLlmAhead: true }, (e) => {
+        if (e.event === "reset") {
+          setReplayProgress({ done: 0, total: e.bars });
+          mutateSeries();
+          mutatePredPaths();
+          mutatePredSeries();
+        } else if (e.event === "bar") {
+          setReplayProgress({ done: e.index + 1, total: e.total });
+          if ((e.index + 1) % 5 === 0) mutateSeries();
+        } else if (e.event === "prediction") {
+          if (e.rows % 5 === 0) mutatePredSeries();
+        }
+      });
+      await Promise.all([
+        mutateSymbols(),
+        mutateSeries(),
+        mutatePredPaths(),
+        mutatePredSeries(),
+      ]);
+    } catch (e) {
+      setReplayError(e instanceof Error ? e.message : "Replay failed");
+    } finally {
+      setReplaying(false);
+      setReplayProgress(null);
+      setPredRefreshing(false);
+    }
+  };
 
   const runNow = async () => {
     if (!symbol) return;
@@ -475,6 +503,23 @@ export function Dashboard() {
               )}
             </button>
             <button
+              onClick={resetReplay}
+              disabled={!symbol || replaying}
+              title="Delete all data and rebuild it tick by tick, projecting each next step as history loads"
+              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text disabled:opacity-40"
+            >
+              {replaying ? (
+                <span className="flex items-center gap-1.5">
+                  <Spinner className="text-good" />
+                  {replayProgress && replayProgress.total
+                    ? `Replaying ${replayProgress.done}/${replayProgress.total}`
+                    : "Replaying"}
+                </span>
+              ) : (
+                "Reset & Replay"
+              )}
+            </button>
+            <button
               onClick={resetView}
               title="Reset metric and selection to defaults"
               className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
@@ -488,9 +533,9 @@ export function Dashboard() {
             />
           </div>
         </div>
-        {runError && (
+        {(runError || replayError) && (
           <div className="shrink-0 border-b border-border bg-bad/10 px-4 py-1.5 text-xs text-bad">
-            {runError}
+            {runError ?? replayError}
           </div>
         )}
 
