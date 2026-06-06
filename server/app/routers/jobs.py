@@ -191,7 +191,7 @@ def backfill(req: BackfillRequest) -> BackfillResponse:
     template = _load_template(req)  # type: ignore[arg-type]
     bars = fetch_ohlc(req.symbol, req.range, req.interval)
     if not bars:
-        raise HTTPException(502, f"no historical data for {req.symbol!r}")
+        raise HTTPException(400, f"no historical data for {req.symbol!r} — check the ticker")
 
     spx_close = {b["ts"]: b["close"] for b in fetch_ohlc("^GSPC", req.range, req.interval)}
 
@@ -314,7 +314,7 @@ async def replay(req: ReplayRequest) -> StreamingResponse:
     template = _load_template(req)  # type: ignore[arg-type]
     bars = fetch_ohlc(req.symbol, req.range, req.interval)
     if not bars:
-        raise HTTPException(502, f"no historical data for {req.symbol!r}")
+        raise HTTPException(400, f"no historical data for {req.symbol!r} — check the ticker")
 
     symbol, interval, warmup = req.symbol, req.interval, max(req.warmup, 2)
     executor = default_executor()
