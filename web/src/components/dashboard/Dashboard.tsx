@@ -169,8 +169,8 @@ export function Dashboard() {
 
   const [predRefreshing, setPredRefreshing] = useState(false);
 
-  // Predicted signal lines: the walk-forward history draws green-dashed
-  // ("pred:"), and the one-step-ahead step draws green-dotted ("predahead:")
+  // Predicted signal lines: the walk-forward history draws green-solid
+  // ("pred:"), and the one-step-ahead step draws green-dashed ("predahead:")
   // as a short segment from the last history projection to the ahead point.
   const chartSeries = useMemo<Series[]>(() => {
     const actual = seriesData?.series ?? [];
@@ -364,7 +364,7 @@ export function Dashboard() {
             className="mb-1.5 flex w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted hover:text-text"
           >
             <Chevron open={actualOpen} />
-            Cortex
+            Actual
           </button>
           {actualOpen &&
             (paths?.length ? (
