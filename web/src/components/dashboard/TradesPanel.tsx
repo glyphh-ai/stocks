@@ -86,6 +86,8 @@ function TradesPanel({
   const [analysis, setAnalysis] = useState<TradeAnalysis | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
 
+  const openTrades = trades.filter((t) => t.status === "open");
+
   const remove = async (id: number) => {
     await api.deleteTrade(id);
     onChanged();
@@ -112,7 +114,7 @@ function TradesPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border p-3">
-          <h2 className="text-sm font-semibold">Trades · {symbol}</h2>
+          <h2 className="text-sm font-semibold">Open positions · {symbol}</h2>
           <button
             onClick={() => setModal({ mode: "open" })}
             className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg hover:opacity-90"
@@ -122,13 +124,14 @@ function TradesPanel({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {trades.length === 0 ? (
+          {openTrades.length === 0 ? (
             <p className="px-1 py-6 text-center text-sm text-text-muted">
-              No trades yet. Record one with “New trade”.
+              No open positions. Record one with “New trade”, or see closed
+              trades on the Trades tab.
             </p>
           ) : (
             <ul className="flex flex-col gap-1.5">
-              {trades.map((t) => (
+              {openTrades.map((t) => (
                 <li
                   key={t.id}
                   className="flex items-center gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
