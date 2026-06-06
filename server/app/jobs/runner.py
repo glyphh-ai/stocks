@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 from datetime import datetime
 from typing import Any
 
@@ -23,11 +24,20 @@ from .tools import get_tool
 
 
 async def _call_tool(
-    name: str, args: dict[str, Any], cred: dict[str, str] | None = None
+    name: str,
+    args: dict[str, Any],
+    ctx: dict[str, Any],
+    cred: dict[str, str] | None = None,
 ) -> Any:
     fn = get_tool(name)
     if cred is not None:
         args = {**args, "cred": cred}
+    # Auto-inject point-in-time context a tool declares but the step didn't
+    # supply, so existing templates get the tick timestamp without edits.
+    params = inspect.signature(fn).parameters
+    for key in ("ts", "interval"):
+        if key in params and key not in args and ctx.get(key) is not None:
+            args = {**args, key: ctx[key]}
     if asyncio.iscoroutinefunction(fn):
         return await fn(**args)
     return await asyncio.to_thread(fn, **args)
@@ -49,7 +59,7 @@ async def run_segment(
                 if cred is None:
                     raise KeyError(f"no credential stored as {cred_name!r}")
             ctx[step["out"]] = await _call_tool(
-                step["name"], resolve(step.get("args", {}), ctx), cred
+                step["name"], resolve(step.get("args", {}), ctx), ctx, cred
             )
         elif kind == "llm":
             ctx[step["out"]] = await executor.run(
@@ -107,7 +117,7 @@ async def run_glyph(
     session: Session,
 ) -> tuple[int, dict]:
     """Run all jobs, fill the template, persist a new version. Layers run in order."""
-    base_ctx = {"symbol": symbol, "interval": interval}
+    base_ctx = {"symbol": symbol, "interval": interval, "ts": ts}
     filled = copy.deepcopy(template)
     filled["symbol"] = symbol
     filled["interval"] = interval

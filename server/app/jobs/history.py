@@ -7,11 +7,77 @@ glyph drift series reflects actual market movement rather than a constant stub.
 from __future__ import annotations
 
 import json
+import time as _time
 import urllib.parse
 import urllib.request
+from bisect import bisect_right
 from datetime import datetime, timezone
 
 _CHART = "https://query1.finance.yahoo.com/v8/finance/chart/"
+
+# A wide history window per interval, so a point-in-time lookup for any
+# reasonable replay timestamp is covered by one cached fetch. Intraday tokens
+# are bounded by what Yahoo will serve for that granularity.
+_RANGE_FOR = {
+    "1m": "7d",
+    "2m": "60d",
+    "5m": "60d",
+    "15m": "60d",
+    "30m": "60d",
+    "1h": "2y",
+    "1d": "5y",
+    "1wk": "10y",
+    "1mo": "max",
+}
+
+# Memoize whole-range fetches so a 120-bar replay that calls tools per tick
+# (each needing gold/spx/etc. as-of that tick) hits Yahoo once per series, not
+# once per tick. Keyed by (symbol, range, interval); short TTL so a live tick
+# still sees a fresh-enough tail.
+_SERIES_CACHE: dict[tuple[str, str, str], tuple[float, list[dict]]] = {}
+_CACHE_TTL = 300.0  # seconds
+
+
+def _range_for(interval: str) -> str:
+    return _RANGE_FOR.get(interval, "5y")
+
+
+def fetch_series_cached(symbol: str, interval: str = "1d") -> list[dict]:
+    """OHLC bars for a symbol over a wide window, memoized with a short TTL."""
+    range_ = _range_for(interval)
+    key = (symbol.upper(), range_, interval)
+    now = _time.time()
+    hit = _SERIES_CACHE.get(key)
+    if hit and now - hit[0] < _CACHE_TTL:
+        return hit[1]
+    bars = fetch_ohlc(symbol, range_, interval)
+    _SERIES_CACHE[key] = (now, bars)
+    return bars
+
+
+def series_upto(
+    symbol: str, ts: datetime | None = None, *, interval: str = "1d"
+) -> list[dict]:
+    """Bars at or before `ts` (oldest first). `ts=None` returns the full series.
+
+    This is the point-in-time primitive: callers never see a bar dated after
+    `ts`, so engineered features and as-of reads carry no lookahead.
+    """
+    bars = fetch_series_cached(symbol, interval)
+    if ts is None:
+        return bars
+    times = [b["ts"] for b in bars]
+    return bars[: bisect_right(times, ts)]
+
+
+def as_of(
+    symbol: str, ts: datetime | None = None, *, field: str = "close", interval: str = "1d"
+) -> float | None:
+    """The most recent value of `field` at or before `ts` (latest if ts=None)."""
+    bars = series_upto(symbol, ts, interval=interval)
+    if not bars:
+        return None
+    return bars[-1].get(field)
 
 
 def fetch_ohlc(symbol: str, range_: str = "6mo", interval: str = "1d") -> list[dict]:

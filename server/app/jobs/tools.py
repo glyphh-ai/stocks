@@ -9,6 +9,7 @@ source = adding one @tool here; the builder needs no changes beyond the creds.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any, Callable
 
 _REGISTRY: dict[str, Callable] = {}
@@ -95,41 +96,86 @@ def yahoo_news(symbol: str, limit: int = 8) -> list[str]:
 
 @tool(
     "quote",
-    description="Stub price/volume for a symbol (deterministic).",
+    description="Real point-in-time price/volume for a symbol (Yahoo, no key).",
     params=[{"name": "symbol", "type": "symbol", "required": True}],
     outputs=["price", "volume"],
 )
-def quote(symbol: str) -> dict[str, float]:
-    """Deterministic stub price/volume, seeded by symbol. Swap for a real feed later."""
-    return {
-        "price": round(50 + _unit(symbol, "price") * 350, 2),
-        "volume": round(1_000_000 + _unit(symbol, "volume") * 49_000_000),
-    }
+def quote(symbol: str, ts: datetime | None = None, interval: str = "1d") -> dict[str, float]:
+    """Price/volume as-of `ts` (the runner injects the tick timestamp). With no
+    `ts` it returns the latest bar, so the live "Run now" path still works."""
+    from .history import as_of
+
+    px = as_of(symbol, ts, field="close", interval=interval)
+    vol = as_of(symbol, ts, field="volume", interval=interval)
+    return {"price": float(px) if px is not None else 0.0,
+            "volume": float(vol) if vol is not None else 0.0}
 
 
 @tool(
     "market_rel",
-    description="Stub market-relative signals for a symbol (deterministic).",
+    description="Real market-relative signals (symbol vs ^GSPC) as-of a tick.",
     params=[{"name": "symbol", "type": "symbol", "required": True}],
     outputs=["vs_sp500_pct", "sector_volume"],
 )
-def market_rel(symbol: str) -> dict[str, float]:
-    """Deterministic stub market-relative signals, seeded by symbol."""
-    return {
-        "vs_sp500_pct": round(-3 + _unit(symbol, "sp500") * 6, 2),
-        "sector_volume": round(_unit(symbol, "sector") * 100_000_000),
-    }
+def market_rel(symbol: str, ts: datetime | None = None, interval: str = "1d") -> dict[str, float]:
+    """The symbol's return minus the S&P 500's return over the last bar, as-of
+    `ts`, plus the symbol's traded volume as a sector-volume proxy."""
+    from .history import series_upto
+
+    def _last_return(sym: str) -> float | None:
+        bars = series_upto(sym, ts, interval=interval)
+        if len(bars) < 2 or not bars[-2]["close"]:
+            return None
+        return (bars[-1]["close"] / bars[-2]["close"] - 1) * 100
+
+    sym_ret = _last_return(symbol)
+    spx_ret = _last_return("^GSPC")
+    bars = series_upto(symbol, ts, interval=interval)
+    vol = bars[-1]["volume"] if bars else 0.0
+    rel = (sym_ret - spx_ret) if (sym_ret is not None and spx_ret is not None) else 0.0
+    return {"vs_sp500_pct": round(rel, 4), "sector_volume": float(vol)}
 
 
 @tool(
     "commodity_prices",
-    description="Stub gold/silver/bitcoin prices (deterministic).",
+    description="Real gold/silver/bitcoin prices as-of a tick (Yahoo, no key).",
     params=[],
     outputs=["gold", "silver", "bitcoin"],
 )
-def commodity_prices() -> dict[str, float]:
-    """Deterministic stub commodity prices (symbol-independent)."""
-    return {"gold": 2300.0, "silver": 29.0, "bitcoin": 68000.0}
+def commodity_prices(ts: datetime | None = None) -> dict[str, float]:
+    """Gold (GC=F), silver (SI=F), bitcoin (BTC-USD) closes as-of `ts`. These
+    are daily series regardless of the glyph interval."""
+    from .history import as_of
+
+    def _px(sym: str) -> float:
+        v = as_of(sym, ts, field="close", interval="1d")
+        return float(v) if v is not None else 0.0
+
+    return {"gold": _px("GC=F"), "silver": _px("SI=F"), "bitcoin": _px("BTC-USD")}
+
+
+@tool(
+    "market_climate",
+    description="Real volatility / rates / oil / dollar regime signals as-of a tick.",
+    params=[],
+    outputs=["vix", "yield_10y", "oil", "dollar"],
+)
+def market_climate(ts: datetime | None = None) -> dict[str, float]:
+    """Macro climate as-of `ts`: ^VIX (fear), ^TNX (10y yield), CL=F (crude),
+    DX-Y.NYB (dollar index). VIX is the honest point-in-time proxy for the
+    market-fear signal that has no free historical headline feed."""
+    from .history import as_of
+
+    def _px(sym: str) -> float:
+        v = as_of(sym, ts, field="close", interval="1d")
+        return float(v) if v is not None else 0.0
+
+    return {
+        "vix": _px("^VIX"),
+        "yield_10y": _px("^TNX"),
+        "oil": _px("CL=F"),
+        "dollar": _px("DX-Y.NYB"),
+    }
 
 
 def _auth_headers(cred: dict[str, str] | None) -> dict[str, str]:
