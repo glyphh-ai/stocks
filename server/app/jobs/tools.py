@@ -178,6 +178,99 @@ def market_climate(ts: datetime | None = None) -> dict[str, float]:
     }
 
 
+_FEATURE_KEYS = (
+    "momentum",
+    "rsi",
+    "realized_vol",
+    "volume_z",
+    "ma_distance",
+    "beta_spx",
+)
+
+
+def _beta_spx(symbol: str, ts: datetime | None, interval: str, window: int) -> float:
+    """Rolling beta of the symbol's returns to ^GSPC over `window`, as-of `ts`."""
+    import numpy as np
+
+    from .history import series_upto
+
+    spx = {b["ts"]: b["close"] for b in series_upto("^GSPC", ts, interval=interval)}
+    pairs = [
+        (b["close"], spx[b["ts"]])
+        for b in series_upto(symbol, ts, interval=interval)
+        if b["ts"] in spx and b["close"] and spx[b["ts"]]
+    ]
+    if len(pairs) < window + 1:
+        return 0.0
+    pairs = pairs[-(window + 1) :]
+    sr = np.diff(np.log(np.asarray([p[0] for p in pairs], dtype=float)))
+    mr = np.diff(np.log(np.asarray([p[1] for p in pairs], dtype=float)))
+    var = float(mr.var())
+    return round(float(np.cov(sr, mr)[0, 1] / var), 4) if var > 0 else 0.0
+
+
+@tool(
+    "price_features",
+    description="Engineered signals (momentum, RSI, vol, volume-z, MA-distance, beta) from price history up to a tick.",
+    params=[{"name": "symbol", "type": "symbol", "required": True}],
+    outputs=list(_FEATURE_KEYS),
+    config=[{"name": "window", "type": "number", "required": False}],
+)
+def price_features(
+    symbol: str,
+    ts: datetime | None = None,
+    interval: str = "1d",
+    window: int = 14,
+) -> dict[str, float]:
+    """Technical features derived purely from the symbol's own price/volume
+    history at or before `ts` — no lookahead. `window` is the lookback (bars).
+
+    momentum:     % change over the window
+    rsi:          Wilder-style relative strength index (0..100)
+    realized_vol: annualized stdev of log returns, in %
+    volume_z:     latest volume's z-score over the window
+    ma_distance:  % distance of the last close from its window moving average
+    beta_spx:     rolling beta of returns to ^GSPC
+    """
+    import numpy as np
+
+    from .history import series_upto
+
+    window = max(int(window), 2)
+    bars = series_upto(symbol, ts, interval=interval)
+    closes = [b["close"] for b in bars if b["close"] is not None]
+    vols = [b["volume"] for b in bars if b["volume"] is not None]
+    if len(closes) < window + 1:
+        return {k: 0.0 for k in _FEATURE_KEYS}
+
+    c = np.asarray(closes, dtype=float)
+    momentum = (closes[-1] / closes[-1 - window] - 1) * 100
+
+    diffs = np.diff(c[-(window + 1) :])
+    gains = float(diffs[diffs > 0].sum())
+    losses = float(-diffs[diffs < 0].sum())
+    rsi = 100.0 if losses == 0 else 100 - 100 / (1 + gains / losses)
+
+    rets = np.diff(np.log(c[-(window + 1) :]))
+    realized_vol = float(np.std(rets)) * (252.0 ** 0.5) * 100
+
+    ma = float(np.mean(c[-window:]))
+    ma_distance = (closes[-1] / ma - 1) * 100 if ma else 0.0
+
+    vwin = np.asarray(vols[-window:], dtype=float) if len(vols) >= window else np.asarray(vols, dtype=float)
+    vstd = float(vwin.std())
+    volume_z = float((vols[-1] - float(vwin.mean())) / vstd) if vstd > 0 else 0.0
+
+    return {
+        "momentum": round(momentum, 4),
+        "rsi": round(rsi, 4),
+        "realized_vol": round(realized_vol, 4),
+        "volume_z": round(volume_z, 4),
+        "ma_distance": round(ma_distance, 4),
+        "beta_spx": _beta_spx(symbol, ts, interval, window),
+    }
+
+
 def _auth_headers(cred: dict[str, str] | None) -> dict[str, str]:
     """Translate a decrypted credential into request headers."""
     if not cred:
