@@ -434,7 +434,7 @@ export function Dashboard() {
 
       {/* Main chart */}
       <section className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
           <div className="flex items-baseline gap-3">
             <h1 className="text-lg font-semibold tracking-tight">{symbol || "—"}</h1>
             {activeInfo && (
@@ -486,6 +486,21 @@ export function Dashboard() {
             >
               Backtest
             </button>
+            <ClearHistoryButton
+              symbol={symbol}
+              interval={interval}
+              onCleared={onHistoryCleared}
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={resetView}
+              title="Reset metric and selection to defaults"
+              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
+            >
+              Reset view
+            </button>
             <button
               onClick={runNow}
               disabled={!symbol || running}
@@ -500,18 +515,6 @@ export function Dashboard() {
                 "Run now"
               )}
             </button>
-            <button
-              onClick={resetView}
-              title="Reset metric and selection to defaults"
-              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
-            >
-              Reset view
-            </button>
-            <ClearHistoryButton
-              symbol={symbol}
-              interval={interval}
-              onCleared={onHistoryCleared}
-            />
           </div>
         </div>
         {runError && (
