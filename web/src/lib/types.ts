@@ -244,6 +244,64 @@ export interface PredictionResponse {
   note: string | null;
 }
 
+// ---- Walk-forward backtest ----
+
+export interface BacktestPoint {
+  ts: string;
+  prev: number;
+  predicted: number;
+  actual: number;
+  confidence: number;
+}
+
+export interface BacktestMetrics {
+  n: number;
+  directional_accuracy: number | null;
+  directional_n: number;
+  mae: number;
+  mape: number | null;
+  rmse: number;
+  naive_mae: number;
+  skill_vs_naive: number | null;
+  mean_confidence: number;
+}
+
+export interface BacktestResult {
+  symbol: string;
+  interval: string;
+  basis_versions: number;
+  warmup: number;
+  price_path?: string;
+  points: BacktestPoint[];
+  metrics: BacktestMetrics | null;
+  note: string | null;
+}
+
+export interface BacktestImprovement {
+  idea: string;
+  rationale: string;
+  expected_impact: "high" | "medium" | "low";
+}
+
+export interface BacktestAnalysisBody {
+  assessment: string;
+  beam_strengths: string[];
+  beam_weaknesses: string[];
+  improvements: BacktestImprovement[];
+  verdict: "signal" | "inconclusive" | "no_signal";
+}
+
+export interface BacktestAnalysis {
+  backtest: {
+    symbol: string;
+    interval: string;
+    metrics: BacktestMetrics | null;
+    note?: string | null;
+  };
+  llm_available: boolean;
+  analysis: BacktestAnalysisBody;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

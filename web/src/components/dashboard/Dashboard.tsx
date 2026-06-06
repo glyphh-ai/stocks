@@ -16,6 +16,7 @@ import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
 import { TradesButton } from "./TradesPanel";
 import { PredictionModal } from "./PredictionModal";
+import { BacktestModal } from "./BacktestModal";
 import { ClearHistoryButton } from "./ClearHistoryButton";
 import { Spinner } from "../Spinner";
 
@@ -54,6 +55,7 @@ export function Dashboard() {
 
   const [predicting, setPredicting] = useState(false);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
+  const [backtesting, setBacktesting] = useState(false);
 
   const resetView = () => {
     setMetric(DEFAULT_METRIC);
@@ -301,6 +303,14 @@ export function Dashboard() {
               )}
             </button>
             <button
+              onClick={() => setBacktesting(true)}
+              disabled={!symbol}
+              title="Walk the chart history, predicting each next interval, to score the beam"
+              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text disabled:opacity-40"
+            >
+              Backtest
+            </button>
+            <button
               onClick={runNow}
               disabled={!symbol || running}
               title="Run the glyph job now and append a live version"
@@ -359,6 +369,13 @@ export function Dashboard() {
 
       {prediction && (
         <PredictionModal data={prediction} onClose={() => setPrediction(null)} />
+      )}
+      {backtesting && symbol && (
+        <BacktestModal
+          symbol={symbol}
+          interval={interval}
+          onClose={() => setBacktesting(false)}
+        />
       )}
     </div>
   );

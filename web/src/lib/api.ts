@@ -1,5 +1,7 @@
 import type {
   AppSettings,
+  BacktestAnalysis,
+  BacktestResult,
   BackfillResponse,
   ClearHistoryResult,
   CredentialMeta,
@@ -103,6 +105,17 @@ export const api = {
     http<ClearHistoryResult>(
       `/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&remove_trades=${removeTrades}`,
       { method: "DELETE" },
+    ),
+
+  backtest: (symbol: string, interval: string) =>
+    http<BacktestResult>(
+      `/predict/backtest?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
+
+  analyzeBacktest: (symbol: string, interval: string) =>
+    http<BacktestAnalysis>(
+      `/predict/backtest/analyze?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+      { method: "POST" },
     ),
 
   tools: () => http<ToolSpec[]>("/tools"),

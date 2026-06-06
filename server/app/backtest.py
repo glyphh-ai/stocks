@@ -283,7 +283,7 @@ async def analyze_backtest(
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     resp = await client.messages.create(
         model=settings.anthropic_model,
-        max_tokens=2000,
+        max_tokens=4000,
         thinking={"type": "disabled"},
         system=[{"type": "text", "text": _SYSTEM}],
         messages=[
