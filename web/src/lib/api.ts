@@ -5,6 +5,7 @@ import type {
   GlyphTemplate,
   Metric,
   PathInfo,
+  PredictionResponse,
   QuoteResponse,
   RunResponse,
   Segment,
@@ -89,6 +90,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ symbol, interval }),
     }),
+
+  predict: (symbol: string, interval: string) =>
+    http<PredictionResponse>(
+      `/predict?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
 
   tools: () => http<ToolSpec[]>("/tools"),
 

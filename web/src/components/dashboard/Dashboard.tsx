@@ -3,11 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
-import type { Metric, PathInfo, SeriesResponse, SymbolInfo, Trade } from "@/lib/types";
+import type {
+  Metric,
+  PathInfo,
+  PredictionResponse,
+  SeriesResponse,
+  SymbolInfo,
+  Trade,
+} from "@/lib/types";
 import { colorForPath, shortLabel } from "@/lib/colors";
 import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
 import { TradesButton } from "./TradesPanel";
+import { PredictionModal } from "./PredictionModal";
 
 const LONG_COLOR = "#16a34a";
 const SHORT_COLOR = "#dc2626";
@@ -41,6 +49,9 @@ export function Dashboard() {
 
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+
+  const [predicting, setPredicting] = useState(false);
+  const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
 
   const resetView = () => {
     setMetric(DEFAULT_METRIC);
@@ -111,6 +122,16 @@ export function Dashboard() {
       setRunError(e instanceof Error ? e.message : "Run failed");
     } finally {
       setRunning(false);
+    }
+  };
+
+  const predict = async () => {
+    if (!symbol) return;
+    setPredicting(true);
+    try {
+      setPrediction(await api.predict(symbol, interval));
+    } finally {
+      setPredicting(false);
     }
   };
 
@@ -259,6 +280,14 @@ export function Dashboard() {
             </div>
             <TradesButton symbol={symbol} interval={interval} onChanged={() => mutateTrades()} />
             <button
+              onClick={predict}
+              disabled={!symbol || predicting}
+              title="Beam-search the next projected glyph from recorded history"
+              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text disabled:opacity-40"
+            >
+              {predicting ? "Projecting…" : "Predict"}
+            </button>
+            <button
               onClick={runNow}
               disabled={!symbol || running}
               title="Run the glyph job now and append a live version"
@@ -303,6 +332,10 @@ export function Dashboard() {
           )}
         </div>
       </section>
+
+      {prediction && (
+        <PredictionModal data={prediction} onClose={() => setPrediction(null)} />
+      )}
     </div>
   );
 }

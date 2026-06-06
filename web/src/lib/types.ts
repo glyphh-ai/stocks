@@ -187,6 +187,38 @@ export interface TradeAnalysis {
   };
 }
 
+// ---- Next-glyph prediction (beam search) ----
+
+export interface RoleMove {
+  from: number;
+  to: number;
+  delta: number;
+}
+
+export interface GlyphPrediction {
+  rank: number;
+  score: number;
+  confidence: number;
+  projected_drift: number;
+  roles: Record<string, RoleMove>;
+}
+
+export interface TopMover extends RoleMove {
+  role: string;
+  intensity: number;
+}
+
+export interface PredictionResponse {
+  symbol: string;
+  interval: string;
+  basis_versions: number;
+  latest_ts: string | null;
+  modeled_roles: number;
+  predictions: GlyphPrediction[];
+  top_movers?: TopMover[];
+  note: string | null;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {
