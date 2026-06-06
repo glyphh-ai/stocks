@@ -59,3 +59,43 @@ class GlyphNode(Base):
     version: Mapped["GlyphVersion"] = relationship(back_populates="nodes")
 
     __table_args__ = (Index("ix_node_version_path", "version_id", "path"),)
+
+
+class GlyphTemplate(Base):
+    """A saved glyph structure built in the config UI. The instance template
+    (layers/segments/roles/jobs) that jobs fill and persist as versions."""
+
+    __tablename__ = "glyph_template"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    body: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Credential(Base):
+    """An encrypted secret a tool step can reference by name.
+
+    `kind` is the credential shape (bearer | basic | header); `enc` is the
+    Fernet-encrypted JSON of the secret fields for that kind. The plaintext is
+    only decrypted server-side in the job runner — it is never sent to the UI.
+    """
+
+    __tablename__ = "credential"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # bearer | basic | header
+    enc: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

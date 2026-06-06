@@ -16,13 +16,18 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..storage import write_glyph
+from ..store_credentials import get_credential_secret
 from .context import resolve
 from .executor import LLMExecutor
 from .tools import get_tool
 
 
-async def _call_tool(name: str, args: dict[str, Any]) -> Any:
+async def _call_tool(
+    name: str, args: dict[str, Any], cred: dict[str, str] | None = None
+) -> Any:
     fn = get_tool(name)
+    if cred is not None:
+        args = {**args, "cred": cred}
     if asyncio.iscoroutinefunction(fn):
         return await fn(**args)
     return await asyncio.to_thread(fn, **args)
@@ -37,7 +42,15 @@ async def run_segment(
     for step in segment.get("job", []):
         kind = step["kind"]
         if kind == "tool":
-            ctx[step["out"]] = await _call_tool(step["name"], resolve(step.get("args", {}), ctx))
+            cred = None
+            cred_name = step.get("credential")
+            if cred_name:
+                cred = get_credential_secret(cred_name)
+                if cred is None:
+                    raise KeyError(f"no credential stored as {cred_name!r}")
+            ctx[step["out"]] = await _call_tool(
+                step["name"], resolve(step.get("args", {}), ctx), cred
+            )
         elif kind == "llm":
             ctx[step["out"]] = await executor.run(
                 system=resolve(step.get("system", ""), ctx),

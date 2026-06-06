@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-4-7"
 
+    # Fernet key for encrypting stored credentials. Auto-generated and
+    # persisted to server/.env on first use if left empty (see app/crypto.py).
+    credential_key: str = ""
+
     @classmethod
     def settings_customise_sources(
         cls,

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from ..db import PgSession
 from ..jobs import default_executor, run_glyph
+from ..jobs.runner import run_segment
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -57,6 +58,32 @@ def _flatten_roles(filled: dict[str, Any]) -> dict[str, Any]:
                 if "value" in role:
                     out[f"{layer['key']}/{seg['key']}/{role['key']}"] = role["value"]
     return out
+
+
+class TestSegmentRequest(BaseModel):
+    symbol: str = "TEST"
+    interval: str = "1m"
+    segment: dict[str, Any]
+
+
+class TestSegmentResponse(BaseModel):
+    roles: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+@router.post("/test-segment", response_model=TestSegmentResponse)
+async def test_segment(req: TestSegmentRequest) -> TestSegmentResponse:
+    """Run a single segment's job in isolation and return the role values it sets.
+
+    Drives the config UI's test panel — no glyph is persisted. Uses the real
+    Claude executor when a key is set, else the stub (which refuses llm steps).
+    """
+    base_ctx = {"symbol": req.symbol, "interval": req.interval}
+    try:
+        roles = await run_segment(req.segment, base_ctx, default_executor())
+        return TestSegmentResponse(roles=roles)
+    except Exception as exc:  # noqa: BLE001 - surface the failure to the UI
+        return TestSegmentResponse(error=f"{type(exc).__name__}: {exc}")
 
 
 @router.post("/run", response_model=RunResponse)

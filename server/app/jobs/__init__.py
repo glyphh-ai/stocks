@@ -1,6 +1,6 @@
 from .executor import AnthropicLLMExecutor, LLMExecutor, StubLLMExecutor
 from .runner import run_glyph, run_layer, run_segment
-from .tools import get_tool, register, tool
+from .tools import get_tool, list_tool_specs, register, tool
 
 
 def default_executor() -> LLMExecutor:
@@ -27,6 +27,7 @@ __all__ = [
     "run_layer",
     "run_segment",
     "get_tool",
+    "list_tool_specs",
     "register",
     "tool",
 ]
