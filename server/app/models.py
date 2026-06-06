@@ -124,6 +124,32 @@ class GlyphPrediction(Base):
     )
 
 
+class PredictionConversation(Base):
+    """The running Claude dialogue that shapes a symbol/interval's forecasts.
+
+    The LLM forecaster does not start cold each interval — it continues one
+    persistent conversation per (symbol, interval). `messages` is the full
+    Anthropic messages array (every content block, including any server-side
+    compaction blocks) carried from one prediction to the next, so the model's
+    reasoning about regime, signal couplings, and how its past calls fared
+    accumulates over time. Compaction keeps it from growing without bound.
+    """
+
+    __tablename__ = "prediction_conversation"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    interval: Mapped[str] = mapped_column(String(8))
+    messages: Mapped[list] = mapped_column(JSONB, default=list)  # Anthropic msgs
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "interval", name="uq_conversation_bucket"),
+    )
+
+
 class Credential(Base):
     """An encrypted secret a tool step can reference by name.
 

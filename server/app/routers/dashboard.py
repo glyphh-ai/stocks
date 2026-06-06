@@ -14,7 +14,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from ..db import PgSession
-from ..models import Trade
+from ..forecaster import reset_conversation
+from ..models import GlyphPrediction, Trade
 from ..storage import (
     baseline_drift,
     delete_history,
@@ -104,6 +105,13 @@ def clear_history(
     session = PgSession()
     try:
         versions = delete_history(session, symbol, interval)
+        # Predictions and the forecasting dialogue are derived from history —
+        # drop them so a re-seed doesn't inherit stale projections or context.
+        session.query(GlyphPrediction).filter(
+            GlyphPrediction.symbol == symbol,
+            GlyphPrediction.interval == interval,
+        ).delete(synchronize_session=False)
+        reset_conversation(session, symbol, interval)
         trades = 0
         if remove_trades:
             trades = (

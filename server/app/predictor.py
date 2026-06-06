@@ -45,7 +45,7 @@ EWMA_ALPHA = 0.4  # weight on the most recent delta in the momentum term
 W_AR = 1.0  # autoregressive weight in the base blend
 W_BEAM = 1.0  # beam weight in the base blend
 TRADE_NUDGE = 0.5  # scale of the trade-bias nudge (in units of signal volatility)
-LLM_NUDGE = 0.7  # scale of the LLM-bias nudge (in units of signal volatility)
+LLM_NUDGE = 1.5  # scale of the LLM-bias nudge (in units of signal volatility)
 DEFAULT_WARMUP = 5
 
 
@@ -196,100 +196,6 @@ def _trade_bias(
     }
 
 
-_LLM_SYSTEM = (
-    "You are a quantitative signal forecaster. You are given, for one symbol, "
-    "the recent trajectories of normalized market signals (scalar roles of a "
-    "hyperdimensional 'glyph'), the beam-search projection for the next "
-    "interval, and a short record of recent trades. For each signal you have a "
-    "view on, output a directional bias in [-1, 1] (negative = expect the "
-    "signal to fall next interval, positive = rise, 0 = no view) and a "
-    "confidence in [0, 1]. Be conservative: only nudge signals where the "
-    "trajectory or trade record genuinely supports a direction. Do not give "
-    "financial advice."
-)
-
-_LLM_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "signals": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "bias": {"type": "number"},
-                    "confidence": {"type": "number"},
-                },
-                "required": ["path", "bias", "confidence"],
-                "additionalProperties": False,
-            },
-        },
-        "rationale": {"type": "string"},
-        "overall_confidence": {"type": "number"},
-    },
-    "required": ["signals", "rationale", "overall_confidence"],
-    "additionalProperties": False,
-}
-
-
-async def _llm_bias(
-    symbol: str,
-    interval: str,
-    history: list[dict],
-    beam_vals: dict[str, float],
-    trade_bias: dict[str, float],
-) -> tuple[dict[str, float], float | None, dict[str, Any] | None]:
-    """Ask Claude for a per-signal directional bias. No key -> empty (skipped)."""
-    if not settings.anthropic_api_key:
-        return {}, None, None
-
-    roles = _scalar_roles(history[-1]["glyph"])
-    tail = history[-12:]
-    trajectories: dict[str, list[float | None]] = {
-        path: [_role_value(h["glyph"], path) for h in tail] for path, _ in roles
-    }
-    summary = {
-        "symbol": symbol,
-        "interval": interval,
-        "recent_trajectories": {
-            p: [round(v, 4) if v is not None else None for v in vs]
-            for p, vs in trajectories.items()
-        },
-        "beam_projection": {p: round(v, 4) for p, v in beam_vals.items()},
-        "trade_bias": {p: round(v, 4) for p, v in trade_bias.items()},
-    }
-
-    from anthropic import AsyncAnthropic
-    import json
-
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-    resp = await client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=1500,
-        thinking={"type": "disabled"},
-        system=[{"type": "text", "text": _LLM_SYSTEM}],
-        messages=[
-            {
-                "role": "user",
-                "content": "Forecast next-interval signal biases:\n"
-                + json.dumps(summary, default=str),
-            }
-        ],
-        output_config={"format": {"type": "json_schema", "schema": _LLM_SCHEMA}},
-    )
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    data = json.loads(text)
-
-    valid = {p for p, _ in roles}
-    bias = {
-        s["path"]: float(np.clip(s["bias"], -1.0, 1.0))
-        for s in data.get("signals", [])
-        if s.get("path") in valid
-    }
-    overall = data.get("overall_confidence")
-    return bias, (float(overall) if overall is not None else None), data
-
-
 def _median_step(history: list[dict]) -> timedelta:
     ts = [h["ts"] for h in history]
     gaps = [
@@ -361,8 +267,10 @@ async def refresh_predictions(
     llm_conf: float | None = None
     llm_raw: dict[str, Any] | None = None
     if with_llm:
-        llm_bias, llm_conf, llm_raw = await _llm_bias(
-            symbol, interval, history, beam_vals, trade_bias
+        from .forecaster import llm_forecast
+
+        llm_bias, llm_conf, llm_raw = await llm_forecast(
+            session, symbol, interval, history, beam_vals, trade_bias
         )
 
     assign, comp, conf = _predict_signals(
