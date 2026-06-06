@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   BackfillResponse,
   CredentialMeta,
   CredKind,
@@ -10,6 +11,7 @@ import type {
   RunResponse,
   Segment,
   SeriesResponse,
+  SettingsInput,
   SymbolInfo,
   TemplateBody,
   TemplateMeta,
@@ -116,6 +118,13 @@ export const api = {
     http<TradeAnalysis>(`/trades/${id}/analyze`, { method: "POST" }),
   deleteTrade: (id: number) =>
     http<{ deleted: number }>(`/trades/${id}`, { method: "DELETE" }),
+
+  settings: () => http<AppSettings>("/settings"),
+  saveSettings: (input: SettingsInput) =>
+    http<AppSettings>("/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
 
   credentials: () => http<CredentialMeta[]>("/credentials"),
   saveCredential: (name: string, kind: CredKind, fields: Record<string, string>) =>

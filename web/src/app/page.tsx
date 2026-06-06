@@ -4,8 +4,9 @@ import { useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { ConfigTab } from "@/components/config/ConfigTab";
+import { SettingsTab } from "@/components/settings/SettingsTab";
 
-type Tab = "dashboard" | "config";
+type Tab = "dashboard" | "config" | "settings";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -23,7 +24,7 @@ export default function Home() {
             <span className="text-sm font-semibold tracking-tight">Glyphh</span>
           </div>
           <nav className="flex items-center gap-1">
-            {(["dashboard", "config"] as Tab[]).map((t) => (
+            {(["dashboard", "config", "settings"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -41,8 +42,10 @@ export default function Home() {
         <ThemeToggle />
       </header>
 
-      <main className="min-h-0 flex-1">
-        {tab === "dashboard" ? <Dashboard /> : <ConfigTab />}
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "dashboard" && <Dashboard />}
+        {tab === "config" && <ConfigTab />}
+        {tab === "settings" && <SettingsTab />}
       </main>
     </div>
   );

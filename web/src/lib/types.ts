@@ -145,9 +145,27 @@ export interface Trade {
   exit_price: number | null;
   exit_version_id: number | null;
   pnl: number | null;
+  entry_fee: number;
+  exit_fee: number;
+  net_pnl: number | null;
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+// ---- App settings (trade fees) ----
+
+export interface AppSettings {
+  commission_per_trade: number;
+  per_share: number;
+  percent: number;
+  updated_at: string | null;
+}
+
+export interface SettingsInput {
+  commission_per_trade: number;
+  per_share: number;
+  percent: number;
 }
 
 export interface TradeOpenInput {
