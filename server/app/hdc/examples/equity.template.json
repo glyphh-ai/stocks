@@ -8,6 +8,7 @@
     {
       "key": "symbol",
       "weight": 1.0,
+      "execution": "sequential",
       "segments": [
         {
           "key": "price_action",
@@ -16,6 +17,12 @@
             { "key": "price", "type": "scalar", "range": [0, 500], "weight": 1.0 },
             { "key": "volume", "type": "scalar", "range": [0, 100000000], "weight": 0.7 },
             { "key": "interval", "type": "symbol", "weight": 0.5 }
+          ],
+          "job": [
+            { "kind": "tool", "name": "quote", "args": { "symbol": "{symbol}" }, "out": "q" },
+            { "kind": "set_role", "role": "price", "value": "{q.price}" },
+            { "kind": "set_role", "role": "volume", "value": "{q.volume}" },
+            { "kind": "set_role", "role": "interval", "value": "{interval}" }
           ]
         },
         {
@@ -24,6 +31,11 @@
           "roles": [
             { "key": "vs_sp500_pct", "type": "scalar", "range": [-5, 5], "weight": 1.0 },
             { "key": "sector_volume", "type": "scalar", "range": [0, 100000000], "weight": 0.6 }
+          ],
+          "job": [
+            { "kind": "tool", "name": "market_rel", "args": { "symbol": "{symbol}" }, "out": "m" },
+            { "kind": "set_role", "role": "vs_sp500_pct", "value": "{m.vs_sp500_pct}" },
+            { "kind": "set_role", "role": "sector_volume", "value": "{m.sector_volume}" }
           ]
         }
       ]
@@ -31,6 +43,7 @@
     {
       "key": "macro",
       "weight": 0.6,
+      "execution": "parallel",
       "segments": [
         {
           "key": "commodities",
@@ -39,26 +52,39 @@
             { "key": "gold", "type": "scalar", "range": [1000, 4000], "weight": 0.7 },
             { "key": "silver", "type": "scalar", "range": [10, 60], "weight": 0.4 },
             { "key": "bitcoin", "type": "scalar", "range": [0, 200000], "weight": 0.6 }
+          ],
+          "job": [
+            { "kind": "tool", "name": "commodity_prices", "args": {}, "out": "c" },
+            { "kind": "set_role", "role": "gold", "value": "{c.gold}" },
+            { "kind": "set_role", "role": "silver", "value": "{c.silver}" },
+            { "kind": "set_role", "role": "bitcoin", "value": "{c.bitcoin}" }
           ]
         },
         {
           "key": "news_sentiment",
           "weight": 1.0,
           "roles": [
+            { "key": "yahoo_rank", "type": "scalar", "range": [1, 10], "weight": 1.0 },
+            { "key": "fed_tone", "type": "scalar", "range": [1, 10], "weight": 0.8 }
+          ],
+          "job": [
+            { "kind": "tool", "name": "yahoo_news", "args": { "symbol": "{symbol}" }, "out": "news" },
             {
-              "key": "yahoo_rank",
-              "type": "scalar",
-              "range": [1, 10],
-              "weight": 1.0,
-              "prompt": "Read the latest Yahoo Finance articles for {symbol}. Rank overall sentiment 1 (horrible) to 10 (awesome)."
+              "kind": "llm",
+              "system": "You are an equity analyst. Judge how the supplied news affects the stock. Respond only with the structured score.",
+              "prompt": "Symbol: {symbol}. Headlines: {news}. Score 1 (very negative for the stock) to 10 (very positive).",
+              "schema": { "score": "int[1..10]" },
+              "out": "verdict"
             },
+            { "kind": "set_role", "role": "yahoo_rank", "value": "{verdict.score}" },
             {
-              "key": "fed_tone",
-              "type": "scalar",
-              "range": [1, 10],
-              "weight": 0.8,
-              "prompt": "Assess current Fed/rate tone for equities, 1 (hawkish/negative) to 10 (dovish/positive)."
-            }
+              "kind": "llm",
+              "system": "You assess macro/Fed tone for US equities.",
+              "prompt": "Score current Fed/rate tone for equities 1 (hawkish/negative) to 10 (dovish/positive).",
+              "schema": { "score": "int[1..10]" },
+              "out": "fed"
+            },
+            { "kind": "set_role", "role": "fed_tone", "value": "{fed.score}" }
           ]
         }
       ]

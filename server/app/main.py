@@ -6,6 +6,7 @@ from sqlalchemy import text
 from .config import settings
 from .db import pg_engine, sqlite_engine
 from .migrate import run_migrations
+from .routers import jobs
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.include_router(jobs.router)
 
 
 @app.get("/health")
