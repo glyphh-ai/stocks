@@ -8,6 +8,7 @@ with news_sentiment needs a key, but a tool-only template works offline.
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,10 @@ from pydantic import BaseModel, Field
 
 from ..db import PgSession
 from ..jobs import default_executor, run_glyph
+from ..jobs.history import fetch_ohlc
 from ..jobs.runner import run_segment
+from ..models import GlyphNode, GlyphVersion
+from ..storage import write_glyph
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -84,6 +88,134 @@ async def test_segment(req: TestSegmentRequest) -> TestSegmentResponse:
         return TestSegmentResponse(roles=roles)
     except Exception as exc:  # noqa: BLE001 - surface the failure to the UI
         return TestSegmentResponse(error=f"{type(exc).__name__}: {exc}")
+
+
+class BackfillRequest(BaseModel):
+    symbol: str
+    range: str = "6mo"
+    interval: str = "1d"
+    template: dict[str, Any] | None = None
+    template_name: str = "equity.template.json"
+    replace: bool = True
+
+
+class BackfillResponse(BaseModel):
+    symbol: str
+    interval: str
+    written: int
+    first_ts: datetime | None = None
+    last_ts: datetime | None = None
+
+
+def _role_default(role: dict[str, Any]) -> float:
+    """A stable midpoint value for a scalar role we have no real data for."""
+    lo, hi = role.get("range") or [0.0, 1.0]
+    return (float(lo) + float(hi)) / 2.0
+
+
+def _fill_bar(
+    template: dict[str, Any],
+    symbol: str,
+    interval: str,
+    bar: dict[str, Any],
+    prev_close: float | None,
+    spx_return_pct: float,
+) -> dict[str, Any]:
+    """Fill a template from one price bar.
+
+    Roles we can derive from real data (price/volume/market-relative) get live
+    values; everything else gets a constant midpoint so it contributes no
+    artificial drift over the backfilled window.
+    """
+    derived: dict[str, float] = {
+        "price": bar["close"],
+        "volume": bar["volume"],
+        "sector_volume": bar["volume"],
+    }
+    if prev_close:
+        sym_return_pct = (bar["close"] / prev_close - 1) * 100
+        derived["vs_sp500_pct"] = sym_return_pct - spx_return_pct
+
+    g = copy.deepcopy(template)
+    g["symbol"] = symbol
+    g["interval"] = interval
+    for layer in g.get("layers", []):
+        for seg in layer.get("segments", []):
+            for role in seg.get("roles", []):
+                key = role["key"]
+                if role.get("type") == "symbol":
+                    role["value"] = interval if key == "interval" else symbol
+                elif key in derived:
+                    role["value"] = derived[key]
+                else:
+                    role["value"] = _role_default(role)
+    return g
+
+
+def _clear_versions(session: Any, symbol: str, interval: str) -> None:
+    ids = [
+        v
+        for (v,) in session.query(GlyphVersion.id)
+        .filter_by(symbol=symbol, interval=interval)
+        .all()
+    ]
+    if not ids:
+        return
+    session.query(GlyphNode).filter(GlyphNode.version_id.in_(ids)).delete(
+        synchronize_session=False
+    )
+    session.query(GlyphVersion).filter(GlyphVersion.id.in_(ids)).delete(
+        synchronize_session=False
+    )
+    session.commit()
+
+
+@router.post("/backfill", response_model=BackfillResponse)
+def backfill(req: BackfillRequest) -> BackfillResponse:
+    """Seed the DB with one glyph version per historical bar for a symbol.
+
+    Pulls real OHLCV from Yahoo (no key) plus ^GSPC for the market-relative
+    signal. News/macro roles stay at a neutral constant — there's no historical
+    headline data offline, so backfilling them would invent drift.
+    """
+    template = _load_template(req)  # type: ignore[arg-type]
+    bars = fetch_ohlc(req.symbol, req.range, req.interval)
+    if not bars:
+        raise HTTPException(502, f"no historical data for {req.symbol!r}")
+
+    spx_close = {b["ts"]: b["close"] for b in fetch_ohlc("^GSPC", req.range, req.interval)}
+
+    session = PgSession()
+    try:
+        if req.replace:
+            _clear_versions(session, req.symbol, req.interval)
+
+        written = 0
+        prev_close: float | None = None
+        prev_spx: float | None = None
+        for bar in bars:
+            spx_return_pct = 0.0
+            cur_spx = spx_close.get(bar["ts"])
+            if prev_spx and cur_spx:
+                spx_return_pct = (cur_spx / prev_spx - 1) * 100
+            filled = _fill_bar(
+                template, req.symbol, req.interval, bar, prev_close, spx_return_pct
+            )
+            write_glyph(session, req.symbol, req.interval, bar["ts"], filled)
+            written += 1
+            prev_close = bar["close"]
+            if cur_spx:
+                prev_spx = cur_spx
+    finally:
+        session.close()
+
+    return BackfillResponse(
+        symbol=req.symbol,
+        interval=req.interval,
+        written=written,
+        first_ts=bars[0]["ts"],
+        last_ts=bars[-1]["ts"],
+    )
 
 
 @router.post("/run", response_model=RunResponse)
