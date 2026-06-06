@@ -151,6 +151,22 @@ def list_symbols(session: Session) -> list[dict]:
     ]
 
 
+def delete_history(session: Session, symbol: str, interval: str) -> int:
+    """Delete every glyph version (cascading its nodes) for a symbol/interval.
+
+    The glyph_node FK has ON DELETE CASCADE, so the nodes go with the versions.
+    Trades are untouched — they reference versions softly and are cleared
+    separately when the caller opts in. Returns the version count removed."""
+    result = session.execute(
+        text(
+            "DELETE FROM glyph_version "
+            "WHERE symbol = :symbol AND interval = :interval"
+        ),
+        {"symbol": symbol, "interval": interval},
+    )
+    return int(result.rowcount or 0)
+
+
 def list_paths(session: Session, symbol: str, interval: str) -> list[dict]:
     """Distinct node paths for a symbol/interval (from its latest version)."""
     sql = text(

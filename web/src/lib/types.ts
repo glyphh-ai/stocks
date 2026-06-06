@@ -33,6 +33,13 @@ export interface SeriesResponse {
   series: Series[];
 }
 
+export interface ClearHistoryResult {
+  symbol: string;
+  interval: string;
+  versions_removed: number;
+  trades_removed: number;
+}
+
 // ---- Glyph template (config builder) ----
 
 export interface Role {

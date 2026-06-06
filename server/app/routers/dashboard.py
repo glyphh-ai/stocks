@@ -14,8 +14,10 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from ..db import PgSession
+from ..models import Trade
 from ..storage import (
     baseline_drift,
+    delete_history,
     drift_series,
     list_paths,
     list_symbols,
@@ -84,6 +86,40 @@ def _fetch(session, symbol: str, interval: str, path: str, metric: Metric) -> li
     else:
         rows = baseline_drift(session, symbol, interval, path)
     return [Point(t=ts, v=val) for ts, val in rows]
+
+
+class ClearResult(BaseModel):
+    symbol: str
+    interval: str
+    versions_removed: int
+    trades_removed: int
+
+
+@router.delete("/history", response_model=ClearResult)
+def clear_history(
+    symbol: str, interval: str, remove_trades: bool = False
+) -> ClearResult:
+    """Wipe all glyph history for a symbol/interval. Trades are preserved
+    unless remove_trades is set."""
+    session = PgSession()
+    try:
+        versions = delete_history(session, symbol, interval)
+        trades = 0
+        if remove_trades:
+            trades = (
+                session.query(Trade)
+                .filter(Trade.symbol == symbol, Trade.interval == interval)
+                .delete(synchronize_session=False)
+            )
+        session.commit()
+        return ClearResult(
+            symbol=symbol,
+            interval=interval,
+            versions_removed=versions,
+            trades_removed=int(trades),
+        )
+    finally:
+        session.close()
 
 
 @router.get("/series", response_model=SeriesResponse)

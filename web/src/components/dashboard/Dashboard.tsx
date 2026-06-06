@@ -16,6 +16,7 @@ import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
 import { TradesButton } from "./TradesPanel";
 import { PredictionModal } from "./PredictionModal";
+import { ClearHistoryButton } from "./ClearHistoryButton";
 import { Spinner } from "../Spinner";
 
 const LONG_COLOR = "#16a34a";
@@ -140,6 +141,11 @@ export function Dashboard() {
     symbol ? `/trades?${symbol}` : null,
     () => api.trades(symbol),
   );
+
+  const onHistoryCleared = async () => {
+    await Promise.all([mutateSymbols(), mutateSeries(), mutateTrades()]);
+    resetView();
+  };
 
   const tradeMarkers = useMemo<TradeMarker[]>(() => {
     const out: TradeMarker[] = [];
@@ -315,6 +321,11 @@ export function Dashboard() {
             >
               Reset view
             </button>
+            <ClearHistoryButton
+              symbol={symbol}
+              interval={interval}
+              onCleared={onHistoryCleared}
+            />
           </div>
         </div>
         {runError && (

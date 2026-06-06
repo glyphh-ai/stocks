@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   BackfillResponse,
+  ClearHistoryResult,
   CredentialMeta,
   CredKind,
   GlyphTemplate,
@@ -96,6 +97,12 @@ export const api = {
   predict: (symbol: string, interval: string) =>
     http<PredictionResponse>(
       `/predict?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
+
+  clearHistory: (symbol: string, interval: string, removeTrades: boolean) =>
+    http<ClearHistoryResult>(
+      `/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&remove_trades=${removeTrades}`,
+      { method: "DELETE" },
     ),
 
   tools: () => http<ToolSpec[]>("/tools"),
