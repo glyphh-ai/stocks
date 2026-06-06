@@ -23,7 +23,7 @@ import numpy as np
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .hdc import encode_glyph
+from .hdc import drift as _drift, encode_glyph
 
 # A role identified by its path within the glyph, with its numeric history.
 _TWO_PI_LOG = math.log(2.0 * math.pi)
@@ -103,8 +103,36 @@ def predict_next_glyph(
     candidates_per_role: int = 3,
     coherence_weight: float = 1.5,
 ) -> dict:
-    """Project the next glyph via beam search over per-role dynamics."""
+    """Project the next glyph from all recorded history via beam search."""
     history = _history(session, symbol, interval)
+    return _predict_core(
+        history,
+        symbol,
+        interval,
+        beam_width=beam_width,
+        top_n=top_n,
+        candidates_per_role=candidates_per_role,
+        coherence_weight=coherence_weight,
+    )
+
+
+def _predict_core(
+    history: list[dict],
+    symbol: str,
+    interval: str,
+    *,
+    beam_width: int = 8,
+    top_n: int = 3,
+    candidates_per_role: int = 3,
+    coherence_weight: float = 1.5,
+    with_drift: bool = True,
+) -> dict:
+    """Beam-search the next glyph from a history slice.
+
+    When with_drift is False the projected glyphs are not re-encoded — that
+    skips the HD vectorization per candidate, which matters when this runs
+    hundreds of times in a walk-forward backtest. projected_drift is then None.
+    """
     latest = history[-1]["glyph"] if history else None
 
     if latest is None or len(history) < 2:
@@ -220,18 +248,16 @@ def predict_next_glyph(
     weights = np.exp(shifted)
     conf = weights / weights.sum()
 
-    _, latest_nodes = encode_glyph(latest)
-    latest_cortex = latest_nodes["cortex"]
+    latest_cortex = encode_glyph(latest)[1]["cortex"] if with_drift else None
 
     predictions = []
     for rank, ((assign, score), c) in enumerate(zip(top, conf), start=1):
-        projected = copy.deepcopy(latest)
-        for path, v in assign.items():
-            _set_role_value(projected, path, v)
-        _, nodes = encode_glyph(projected)
-        from .hdc import drift as _drift
-
-        proj_drift = _drift(latest_cortex, nodes["cortex"])
+        proj_drift: float | None = None
+        if with_drift:
+            projected = copy.deepcopy(latest)
+            for path, v in assign.items():
+                _set_role_value(projected, path, v)
+            proj_drift = _drift(latest_cortex, encode_glyph(projected)[1]["cortex"])
 
         role_moves = {}
         for path, v in assign.items():
@@ -245,7 +271,9 @@ def predict_next_glyph(
                 "rank": rank,
                 "score": round(float(score), 4),
                 "confidence": round(float(c), 4),
-                "projected_drift": round(float(proj_drift), 4),
+                "projected_drift": (
+                    round(float(proj_drift), 4) if proj_drift is not None else None
+                ),
                 "roles": role_moves,
             }
         )
