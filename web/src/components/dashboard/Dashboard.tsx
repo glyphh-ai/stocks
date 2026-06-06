@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import type {
   Metric,
@@ -75,39 +75,57 @@ export function Dashboard() {
   const [seedSymbol, setSeedSymbol] = useState<string>("");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [seedProgress, setSeedProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
-  const [replaying, setReplaying] = useState(false);
-  const [replayProgress, setReplayProgress] = useState<{ done: number; total: number } | null>(null);
-  const [replayError, setReplayError] = useState<string | null>(null);
-
   const [predicting, setPredicting] = useState(false);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [backtesting, setBacktesting] = useState(false);
+
+  const { mutate: globalMutate } = useSWRConfig();
 
   const resetView = () => {
     setMetric(DEFAULT_METRIC);
     setSelected(new Set(DEFAULT_SELECTION));
   };
 
+  // Seed = wipe and rebuild a ticker's full history tick by tick: each bar runs
+  // the entire config point-in-time (price, commodities, macro, GDELT news) and
+  // its walk-forward prediction. We select the symbol up front and revalidate as
+  // bars stream so the chart visibly fills in. Progress shows under the input.
   const seed = async () => {
     const sym = seedSymbol.trim().toUpperCase();
-    if (!sym) return;
+    if (!sym || seeding) return;
     setSeeding(true);
     setSeedError(null);
+    setSeedProgress({ done: 0, total: 0 });
+    setSymbol(sym);
+    setInterval("1d");
+    setSelected(new Set(["cortex"]));
+    const refresh = () =>
+      globalMutate((key) => typeof key === "string" && key.includes(sym));
     try {
-      await api.backfill(sym, "6mo", "1d");
+      await api.replay(sym, "1d", { range: "6mo", withLlmAhead: true }, (e) => {
+        if (e.event === "reset") {
+          setSeedProgress({ done: 0, total: e.bars });
+        } else if (e.event === "bar") {
+          setSeedProgress({ done: e.index + 1, total: e.total });
+          if ((e.index + 1) % 5 === 0) refresh();
+        } else if (e.event === "prediction" && e.rows % 5 === 0) {
+          refresh();
+        }
+      });
       setSeedSymbol("");
       await mutateSymbols();
-      setSymbol(sym);
-      setInterval("1d");
+      await refresh();
       resetView();
     } catch (e) {
-      setSeedError(e instanceof Error ? e.message : "Backfill failed");
+      setSeedError(e instanceof Error ? e.message : "Seed failed");
     } finally {
       setSeeding(false);
+      setSeedProgress(null);
     }
   };
 
@@ -195,51 +213,6 @@ export function Dashboard() {
     }
     return [...actual, ...predicted];
   }, [seriesData, predSeriesData]);
-
-  // Reset everything and rebuild the symbol's history tick by tick, projecting
-  // each next step as the historic vectors load. This is a deliberate action —
-  // nothing auto-refreshes on page load, so a replay is a clean, reproducible
-  // walk-forward proof.
-  const resetReplay = async () => {
-    if (!symbol) return;
-    if (
-      !window.confirm(
-        `Delete ALL data for ${symbol} (${interval}) and rebuild it tick by tick? This wipes glyph history and predictions.`,
-      )
-    )
-      return;
-    setReplaying(true);
-    setReplayError(null);
-    setReplayProgress({ done: 0, total: 0 });
-    setPredRefreshing(true);
-    try {
-      await api.replay(symbol, interval, { withLlmAhead: true }, (e) => {
-        if (e.event === "reset") {
-          setReplayProgress({ done: 0, total: e.bars });
-          mutateSeries();
-          mutatePredPaths();
-          mutatePredSeries();
-        } else if (e.event === "bar") {
-          setReplayProgress({ done: e.index + 1, total: e.total });
-          if ((e.index + 1) % 5 === 0) mutateSeries();
-        } else if (e.event === "prediction") {
-          if (e.rows % 5 === 0) mutatePredSeries();
-        }
-      });
-      await Promise.all([
-        mutateSymbols(),
-        mutateSeries(),
-        mutatePredPaths(),
-        mutatePredSeries(),
-      ]);
-    } catch (e) {
-      setReplayError(e instanceof Error ? e.message : "Replay failed");
-    } finally {
-      setReplaying(false);
-      setReplayProgress(null);
-      setPredRefreshing(false);
-    }
-  };
 
   const runNow = async () => {
     if (!symbol) return;
@@ -371,17 +344,42 @@ export function Dashboard() {
                 onKeyDown={(e) => e.key === "Enter" && seed()}
                 placeholder="ticker, e.g. NVDA"
                 spellCheck={false}
-                className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm uppercase outline-none focus:border-accent"
+                disabled={seeding}
+                className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm uppercase outline-none focus:border-accent disabled:opacity-50"
               />
               <button
                 onClick={seed}
                 disabled={seeding || seedSymbol.trim() === ""}
-                title="Pull 6 months of daily history"
-                className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+                title="Wipe and rebuild 6 months of daily history, running the full config (price, commodities, macro, news) point-in-time for every bar"
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                {seeding ? "…" : "Seed"}
+                {seeding ? <Spinner /> : "Seed"}
               </button>
             </div>
+            {seeding && seedProgress && (
+              <div className="mt-2 px-1">
+                <div className="flex items-center justify-between text-[11px] text-text-muted">
+                  <span>
+                    {seedProgress.total
+                      ? `Building ${seedProgress.done}/${seedProgress.total} bars…`
+                      : "Resetting…"}
+                  </span>
+                  {seedProgress.total > 0 && (
+                    <span>{Math.round((seedProgress.done / seedProgress.total) * 100)}%</span>
+                  )}
+                </div>
+                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all"
+                    style={{
+                      width: seedProgress.total
+                        ? `${(seedProgress.done / seedProgress.total) * 100}%`
+                        : "0%",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             {seedError && <p className="mt-1 px-1 text-xs text-bad">{seedError}</p>}
           </div>
         </div>
@@ -503,23 +501,6 @@ export function Dashboard() {
               )}
             </button>
             <button
-              onClick={resetReplay}
-              disabled={!symbol || replaying}
-              title="Delete all data and rebuild it tick by tick, projecting each next step as history loads"
-              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text disabled:opacity-40"
-            >
-              {replaying ? (
-                <span className="flex items-center gap-1.5">
-                  <Spinner className="text-good" />
-                  {replayProgress && replayProgress.total
-                    ? `Replaying ${replayProgress.done}/${replayProgress.total}`
-                    : "Replaying"}
-                </span>
-              ) : (
-                "Reset & Replay"
-              )}
-            </button>
-            <button
               onClick={resetView}
               title="Reset metric and selection to defaults"
               className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
@@ -533,9 +514,9 @@ export function Dashboard() {
             />
           </div>
         </div>
-        {(runError || replayError) && (
+        {runError && (
           <div className="shrink-0 border-b border-border bg-bad/10 px-4 py-1.5 text-xs text-bad">
-            {runError ?? replayError}
+            {runError}
           </div>
         )}
 
