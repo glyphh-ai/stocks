@@ -16,15 +16,48 @@ const METRICS: { id: Metric; label: string; hint: string }[] = [
 
 const REFRESH_MS = 15_000;
 
+const DEFAULT_METRIC: Metric = "baseline";
+const DEFAULT_SELECTION = ["cortex"];
+
 export function Dashboard() {
-  const { data: symbols } = useSWR<SymbolInfo[]>("/symbols", () => api.symbols(), {
-    refreshInterval: REFRESH_MS,
-  });
+  const { data: symbols, mutate: mutateSymbols } = useSWR<SymbolInfo[]>(
+    "/symbols",
+    () => api.symbols(),
+    { refreshInterval: REFRESH_MS },
+  );
 
   const [symbol, setSymbol] = useState<string>("");
   const [interval, setInterval] = useState<string>("1m");
-  const [metric, setMetric] = useState<Metric>("baseline");
-  const [selected, setSelected] = useState<Set<string>>(new Set(["cortex"]));
+  const [metric, setMetric] = useState<Metric>(DEFAULT_METRIC);
+  const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTION));
+
+  const [seedSymbol, setSeedSymbol] = useState<string>("");
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  const resetView = () => {
+    setMetric(DEFAULT_METRIC);
+    setSelected(new Set(DEFAULT_SELECTION));
+  };
+
+  const seed = async () => {
+    const sym = seedSymbol.trim().toUpperCase();
+    if (!sym) return;
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      await api.backfill(sym, "6mo", "1d");
+      setSeedSymbol("");
+      await mutateSymbols();
+      setSymbol(sym);
+      setInterval("1d");
+      resetView();
+    } catch (e) {
+      setSeedError(e instanceof Error ? e.message : "Backfill failed");
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   // Default to the first symbol once data arrives.
   useEffect(() => {
@@ -107,6 +140,31 @@ export function Dashboard() {
               </button>
             ))}
           </div>
+
+          <div className="mt-3 border-t border-border pt-3">
+            <label className="mb-1 block px-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+              Seed history
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                value={seedSymbol}
+                onChange={(e) => setSeedSymbol(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && seed()}
+                placeholder="ticker, e.g. NVDA"
+                spellCheck={false}
+                className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm uppercase outline-none focus:border-accent"
+              />
+              <button
+                onClick={seed}
+                disabled={seeding || seedSymbol.trim() === ""}
+                title="Pull 6 months of daily history"
+                className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {seeding ? "…" : "Seed"}
+              </button>
+            </div>
+            {seedError && <p className="mt-1 px-1 text-xs text-bad">{seedError}</p>}
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -134,19 +192,28 @@ export function Dashboard() {
             </span>
           </div>
 
-          <div className="flex rounded-lg border border-border bg-surface-2 p-0.5">
-            {METRICS.map((m) => (
-              <button
-                key={m.id}
-                title={m.hint}
-                onClick={() => setMetric(m.id)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  metric === m.id ? "bg-surface text-text shadow-sm" : "text-text-muted hover:text-text"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border bg-surface-2 p-0.5">
+              {METRICS.map((m) => (
+                <button
+                  key={m.id}
+                  title={m.hint}
+                  onClick={() => setMetric(m.id)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    metric === m.id ? "bg-surface text-text shadow-sm" : "text-text-muted hover:text-text"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={resetView}
+              title="Reset metric and selection to defaults"
+              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
+            >
+              Reset view
+            </button>
           </div>
         </div>
 

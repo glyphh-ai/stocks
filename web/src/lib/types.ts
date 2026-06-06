@@ -101,6 +101,14 @@ export interface TestSegmentResponse {
   error: string | null;
 }
 
+export interface BackfillResponse {
+  symbol: string;
+  interval: string;
+  written: number;
+  first_ts: string | null;
+  last_ts: string | null;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

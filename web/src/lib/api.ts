@@ -1,4 +1,5 @@
 import type {
+  BackfillResponse,
   CredentialMeta,
   CredKind,
   GlyphTemplate,
@@ -66,6 +67,12 @@ export const api = {
     http<TestSegmentResponse>("/jobs/test-segment", {
       method: "POST",
       body: JSON.stringify({ symbol, interval, segment }),
+    }),
+
+  backfill: (symbol: string, range = "6mo", interval = "1d") =>
+    http<BackfillResponse>("/jobs/backfill", {
+      method: "POST",
+      body: JSON.stringify({ symbol, range, interval }),
     }),
 
   tools: () => http<ToolSpec[]>("/tools"),
