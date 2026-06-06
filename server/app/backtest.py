@@ -1,10 +1,12 @@
-"""Walk-forward evaluation of the beam-search price prediction.
+"""Walk-forward evaluation of the stored ensemble price predictions.
 
-For each interval in a symbol's recorded history (after a warmup window), we
-re-run the beam search using only the glyphs that existed up to that point and
-read off the rank-1 projected price. Comparing that projection to the price
-that actually printed at the next interval — across the whole chart — tells us
-whether the beam has any predictive signal.
+The ensemble predictor persists one projected glyph per past interval (the
+walk-forward `history` rows of glyph_prediction), each predicted only from the
+history that existed before it. This backtest reads those stored predictions
+back, reads off the projected price, and compares it to the price that actually
+printed at that interval — across the whole chart — to tell us whether the
+ensemble has any predictive signal. (Refresh predictions first so the rows
+exist.)
 
 The headline metric is directional accuracy: of all the steps, how often did
 the projected move (up/down vs the prior close) match reality. That is the
@@ -21,7 +23,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .predict import _history, _predict_core, _role_value, _scalar_roles
+from .models import GlyphPrediction
+from .predict import _history, _role_value, _scalar_roles
 
 
 def _price_path(glyph: dict) -> str | None:
@@ -88,7 +91,14 @@ def run_backtest(
     candidates_per_role: int = 3,
     coherence_weight: float = 1.5,
 ) -> dict[str, Any]:
-    """Walk every interval after `warmup`, predicting the next price each step."""
+    """Score the stored ensemble predictions against the prices that printed.
+
+    Reads the walk-forward `history` rows of glyph_prediction (each predicted
+    only from prior history) and lines each up against the actual price at its
+    target interval. `warmup`/`beam_width`/... are retained for API
+    compatibility but no longer drive the prediction — the predictions were
+    already produced by the ensemble refresh.
+    """
     history = _history(session, symbol, interval)
     n = len(history)
     base = {
@@ -99,39 +109,57 @@ def run_backtest(
         "points": [],
         "metrics": None,
     }
-    if n < warmup + 2:
-        return {**base, "note": f"Need at least {warmup + 2} recorded glyphs."}
+    if n < 2:
+        return {**base, "note": "Need at least two recorded glyphs."}
 
     price_path = _price_path(history[-1]["glyph"])
     if price_path is None:
         return {**base, "note": "No scalar 'price' role to evaluate."}
 
-    points: list[dict] = []
-    for i in range(warmup, n):
-        res = _predict_core(
-            history[:i],
-            symbol,
-            interval,
-            beam_width=beam_width,
-            top_n=1,
-            candidates_per_role=candidates_per_role,
-            coherence_weight=coherence_weight,
-            with_drift=False,
-        )
-        preds = res.get("predictions") or []
-        if not preds or price_path not in preds[0]["roles"]:
+    # Actual price at each recorded interval, and the immediately-prior actual
+    # (the naive baseline / the "prev close" each prediction stepped off from).
+    actual_by_ts: dict[Any, float] = {}
+    prev_by_ts: dict[Any, float] = {}
+    last_price: float | None = None
+    for h in history:
+        v = _role_value(h["glyph"], price_path)
+        if v is None:
             continue
-        prev = _role_value(history[i - 1]["glyph"], price_path)
-        actual = _role_value(history[i]["glyph"], price_path)
-        if prev is None or actual is None:
+        if last_price is not None:
+            prev_by_ts[h["ts"]] = last_price
+        actual_by_ts[h["ts"]] = v
+        last_price = v
+
+    rows = (
+        session.query(GlyphPrediction)
+        .filter(
+            GlyphPrediction.symbol == symbol,
+            GlyphPrediction.interval == interval,
+            GlyphPrediction.horizon == "history",
+        )
+        .order_by(GlyphPrediction.target_ts)
+        .all()
+    )
+    if not rows:
+        return {
+            **base,
+            "note": "No stored predictions — refresh predictions first.",
+        }
+
+    points: list[dict] = []
+    for r in rows:
+        predicted = _role_value(r.glyph, price_path)
+        actual = actual_by_ts.get(r.target_ts)
+        prev = prev_by_ts.get(r.target_ts)
+        if predicted is None or actual is None or prev is None:
             continue
         points.append(
             {
-                "ts": history[i]["ts"],
+                "ts": r.target_ts,
                 "prev": round(prev, 4),
-                "predicted": round(float(preds[0]["roles"][price_path]["to"]), 4),
+                "predicted": round(float(predicted), 4),
                 "actual": round(actual, 4),
-                "confidence": preds[0]["confidence"],
+                "confidence": round(float(r.confidence), 4),
             }
         )
 
@@ -146,17 +174,19 @@ def run_backtest(
 
 _SYSTEM = (
     "You are an ML/quant reviewer evaluating a price-prediction backtest. The "
-    "predictor is a beam search over a hyperdimensional 'glyph': each scalar "
-    "role (price, volume, market-relative signals, etc.) traces a value series "
-    "across daily snapshots. The beam models each role's per-step change as a "
-    "Gaussian over its historical deltas (the 'dynamics' term) and scores joint "
-    "candidate states by how close they sit to the nearest real historical "
-    "state (a non-separable 'coherence' term). The rank-1 beam's projected "
-    "price is the prediction. You are given walk-forward metrics and a sample "
-    "of the worst misses. Judge whether the beam shows real directional signal "
-    "(beating 50% and the naive persistence baseline) and give concrete, "
-    "specific changes to push directional accuracy past 60%. Be technical and "
-    "do not give financial advice."
+    "predictor is an ensemble over a hyperdimensional 'glyph': each scalar "
+    "signal (price, volume, market-relative signals, etc.) traces a value "
+    "series across daily snapshots. For each interval it blends an "
+    "autoregressive momentum term (EWMA of recent deltas), a coupled beam "
+    "search (each role's step modeled as a Gaussian over its historical deltas, "
+    "joint states scored by coherence to the nearest real historical state), a "
+    "directional nudge learned from winning vs losing trades, and an optional "
+    "LLM bias. The blended projected price is the prediction. You are given "
+    "walk-forward metrics and a sample of the worst misses. Judge whether the "
+    "ensemble shows real directional signal (beating 50% and the naive "
+    "persistence baseline) and give concrete, specific changes to push "
+    "directional accuracy past 60%. Be technical and do not give financial "
+    "advice."
 )
 
 _SCHEMA: dict[str, Any] = {
