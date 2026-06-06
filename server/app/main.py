@@ -7,7 +7,7 @@ from sqlalchemy import text
 from .config import settings
 from .db import pg_engine, sqlite_engine
 from .migrate import run_migrations
-from .routers import credentials, dashboard, jobs, templates, tools
+from .routers import credentials, dashboard, jobs, templates, tools, trades
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.include_router(dashboard.router)
 app.include_router(templates.router)
 app.include_router(tools.router)
 app.include_router(credentials.router)
+app.include_router(trades.router)
 
 
 @app.get("/health")
