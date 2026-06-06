@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     app_name: str = "stocks"
     sqlite_url: str = "sqlite:///./stocks.db"
-    pg_url: str = "postgresql+psycopg://stocks:stocks@localhost:5432/stocks"
+    pg_url: str = "postgresql+psycopg://stocks:stocks@localhost:5433/stocks"
 
 
 settings = Settings()

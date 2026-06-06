@@ -1,0 +1,67 @@
+{
+  "model": "equity.v1",
+  "symbol": "AAPL",
+  "interval": "1m",
+  "dim": 10000,
+  "space": "bipolar",
+  "layers": [
+    {
+      "key": "symbol",
+      "weight": 1.0,
+      "segments": [
+        {
+          "key": "price_action",
+          "weight": 1.0,
+          "roles": [
+            { "key": "price", "type": "scalar", "range": [0, 500], "weight": 1.0 },
+            { "key": "volume", "type": "scalar", "range": [0, 100000000], "weight": 0.7 },
+            { "key": "interval", "type": "symbol", "weight": 0.5 }
+          ]
+        },
+        {
+          "key": "market_relative",
+          "weight": 0.8,
+          "roles": [
+            { "key": "vs_sp500_pct", "type": "scalar", "range": [-5, 5], "weight": 1.0 },
+            { "key": "sector_volume", "type": "scalar", "range": [0, 100000000], "weight": 0.6 }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "macro",
+      "weight": 0.6,
+      "segments": [
+        {
+          "key": "commodities",
+          "weight": 0.8,
+          "roles": [
+            { "key": "gold", "type": "scalar", "range": [1000, 4000], "weight": 0.7 },
+            { "key": "silver", "type": "scalar", "range": [10, 60], "weight": 0.4 },
+            { "key": "bitcoin", "type": "scalar", "range": [0, 200000], "weight": 0.6 }
+          ]
+        },
+        {
+          "key": "news_sentiment",
+          "weight": 1.0,
+          "roles": [
+            {
+              "key": "yahoo_rank",
+              "type": "scalar",
+              "range": [1, 10],
+              "weight": 1.0,
+              "prompt": "Read the latest Yahoo Finance articles for {symbol}. Rank overall sentiment 1 (horrible) to 10 (awesome)."
+            },
+            {
+              "key": "fed_tone",
+              "type": "scalar",
+              "range": [1, 10],
+              "weight": 0.8,
+              "prompt": "Assess current Fed/rate tone for equities, 1 (hawkish/negative) to 10 (dovish/positive)."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
