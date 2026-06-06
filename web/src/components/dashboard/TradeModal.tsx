@@ -121,7 +121,7 @@ export function TradeModal(props: Props) {
                   key={s}
                   onClick={() => setSide(s)}
                   className={`flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors ${
-                    side === s ? "bg-accent text-white" : "text-text-muted hover:text-text"
+                    side === s ? "bg-accent text-accent-fg" : "text-text-muted hover:text-text"
                   }`}
                 >
                   {s}
@@ -194,7 +194,7 @@ export function TradeModal(props: Props) {
             <button
               onClick={save}
               disabled={!canSave || saving}
-              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {saving ? "Saving…" : props.mode === "open" ? "Record trade" : "Record exit"}
             </button>

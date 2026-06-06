@@ -16,6 +16,7 @@ import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
 import { TradesButton } from "./TradesPanel";
 import { PredictionModal } from "./PredictionModal";
+import { Spinner } from "../Spinner";
 
 const LONG_COLOR = "#16a34a";
 const SHORT_COLOR = "#dc2626";
@@ -204,7 +205,7 @@ export function Dashboard() {
                 key={iv}
                 onClick={() => setInterval(iv)}
                 className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                  interval === iv ? "bg-accent text-white" : "bg-surface-2 text-text-muted hover:text-text"
+                  interval === iv ? "bg-accent text-accent-fg" : "bg-surface-2 text-text-muted hover:text-text"
                 }`}
               >
                 {iv}
@@ -229,7 +230,7 @@ export function Dashboard() {
                 onClick={seed}
                 disabled={seeding || seedSymbol.trim() === ""}
                 title="Pull 6 months of daily history"
-                className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {seeding ? "…" : "Seed"}
               </button>
@@ -285,15 +286,27 @@ export function Dashboard() {
               title="Beam-search the next projected glyph from recorded history"
               className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text disabled:opacity-40"
             >
-              {predicting ? "Projecting…" : "Predict"}
+              {predicting ? (
+                <span className="flex items-center gap-1.5">
+                  <Spinner className="text-accent" /> Projecting
+                </span>
+              ) : (
+                "Predict"
+              )}
             </button>
             <button
               onClick={runNow}
               disabled={!symbol || running}
               title="Run the glyph job now and append a live version"
-              className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {running ? "Running…" : "Run now"}
+              {running ? (
+                <span className="flex items-center gap-1.5">
+                  <Spinner /> Running
+                </span>
+              ) : (
+                "Run now"
+              )}
             </button>
             <button
               onClick={resetView}

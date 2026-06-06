@@ -165,7 +165,7 @@ function CredentialsModal({ onClose }: { onClose: () => void }) {
             <button
               onClick={save}
               disabled={!canSave || busy}
-              className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {busy ? "Saving…" : "Add credential"}
             </button>

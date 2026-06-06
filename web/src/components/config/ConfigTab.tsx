@@ -165,7 +165,7 @@ export function ConfigTab() {
               <button
                 onClick={save}
                 disabled={saving || !dirty}
-                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save"}
               </button>

@@ -59,7 +59,7 @@ export function TestPanel({
             <button
               onClick={run}
               disabled={running}
-              className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {running ? "Running…" : "Run segment"}
             </button>

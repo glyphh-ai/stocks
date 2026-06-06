@@ -12,6 +12,7 @@
   --text: #0e1116;
   --text-muted: #5b6472;
   --accent: #2563eb;
+  --accent-fg: #ffffff;
   --good: #16a34a;
   --bad: #dc2626;
   --grid: rgba(20, 24, 33, 0.06);
@@ -27,6 +28,7 @@
   --text: #e7ecf3;
   --text-muted: #8b96a7;
   --accent: #38bdf8;
+  --accent-fg: #062235;
   --good: #34d399;
   --bad: #f87171;
   --grid: rgba(150, 170, 200, 0.08);
@@ -42,6 +44,7 @@
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
   --color-good: var(--good);
   --color-bad: var(--bad);
   --font-sans: var(--font-geist-sans);

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import type { Trade, TradeAnalysis } from "@/lib/types";
 import { TradeModal } from "./TradeModal";
 import { AnalysisModal } from "./AnalysisModal";
+import { Spinner } from "../Spinner";
 
 function fmtTs(ts: string): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -48,7 +49,7 @@ export function TradesButton({
       >
         Trades
         {openCount > 0 && (
-          <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white">
+          <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[10px] font-semibold text-accent-fg">
             {openCount}
           </span>
         )}
@@ -114,7 +115,7 @@ function TradesPanel({
           <h2 className="text-sm font-semibold">Trades · {symbol}</h2>
           <button
             onClick={() => setModal({ mode: "open" })}
-            className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+            className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg hover:opacity-90"
           >
             + New trade
           </button>
@@ -172,9 +173,13 @@ function TradesPanel({
                     onClick={() => analyze(t.id)}
                     disabled={analyzingId === t.id}
                     title="Analyze the glyph conditions around this trade"
-                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-text-muted hover:text-text disabled:opacity-40"
+                    className="flex w-[60px] shrink-0 items-center justify-center rounded-md border border-border px-2 py-1 text-xs font-medium text-text-muted hover:text-text disabled:opacity-60"
                   >
-                    {analyzingId === t.id ? "…" : "Analyze"}
+                    {analyzingId === t.id ? (
+                      <Spinner className="text-accent" />
+                    ) : (
+                      "Analyze"
+                    )}
                   </button>
                   <button
                     onClick={() => remove(t.id)}
