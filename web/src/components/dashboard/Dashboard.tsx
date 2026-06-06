@@ -16,6 +16,7 @@ import type {
 import { colorForPath, shortLabel } from "@/lib/colors";
 
 const PRED_PREFIX = "pred:";
+const PRED_AHEAD_PREFIX = "predahead:";
 const PRED_COLOR = "#16a34a";
 import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
@@ -27,6 +28,24 @@ import { Spinner } from "../Spinner";
 
 const LONG_COLOR = "#16a34a";
 const SHORT_COLOR = "#dc2626";
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
 
 const METRICS: { id: Metric; label: string; hint: string }[] = [
   { id: "baseline", label: "Drift vs base", hint: "Cosine distance from the first version" },
@@ -50,6 +69,8 @@ export function Dashboard() {
   const [interval, setInterval] = useState<string>("1m");
   const [metric, setMetric] = useState<Metric>(DEFAULT_METRIC);
   const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTION));
+  const [actualOpen, setActualOpen] = useState(true);
+  const [predOpen, setPredOpen] = useState(true);
 
   const [seedSymbol, setSeedSymbol] = useState<string>("");
   const [seeding, setSeeding] = useState(false);
@@ -148,15 +169,26 @@ export function Dashboard() {
 
   const [predRefreshing, setPredRefreshing] = useState(false);
 
-  // Predicted signal lines, tagged with a "pred:" path so the chart draws them
-  // green and dashed alongside the actual series.
+  // Predicted signal lines: the walk-forward history draws green-dashed
+  // ("pred:"), and the one-step-ahead step draws green-dotted ("predahead:")
+  // as a short segment from the last history projection to the ahead point.
   const chartSeries = useMemo<Series[]>(() => {
     const actual = seriesData?.series ?? [];
-    const predicted = (predSeriesData?.series ?? []).map((s) => ({
-      path: `${PRED_PREFIX}${s.path}`,
-      metric: "value" as Metric,
-      points: s.points,
-    }));
+    const predicted: Series[] = [];
+    for (const s of predSeriesData?.series ?? []) {
+      predicted.push({
+        path: `${PRED_PREFIX}${s.path}`,
+        metric: "value" as Metric,
+        points: s.points,
+      });
+      if (s.ahead && s.points.length) {
+        predicted.push({
+          path: `${PRED_AHEAD_PREFIX}${s.path}`,
+          metric: "value" as Metric,
+          points: [s.points[s.points.length - 1], s.ahead],
+        });
+      }
+    }
     return [...actual, ...predicted];
   }, [seriesData, predSeriesData]);
 
@@ -327,36 +359,49 @@ export function Dashboard() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {paths?.length ? (
-            <SeriesPicker paths={paths} selected={selected} onToggle={toggle} />
-          ) : (
-            <p className="px-1 text-sm text-text-muted">No nodes yet.</p>
-          )}
+          <button
+            onClick={() => setActualOpen((o) => !o)}
+            className="mb-1.5 flex w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted hover:text-text"
+          >
+            <Chevron open={actualOpen} />
+            Cortex
+          </button>
+          {actualOpen &&
+            (paths?.length ? (
+              <SeriesPicker paths={paths} selected={selected} onToggle={toggle} />
+            ) : (
+              <p className="px-1 text-sm text-text-muted">No nodes yet.</p>
+            ))}
 
           <div className="mt-4 border-t border-border pt-3">
             <div className="mb-1.5 flex items-center justify-between px-1">
-              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+              <button
+                onClick={() => setPredOpen((o) => !o)}
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted hover:text-text"
+              >
+                <Chevron open={predOpen} />
                 <span
                   className="h-2 w-2 rounded-full"
                   style={{ backgroundColor: PRED_COLOR }}
                 />
                 Prediction
-              </span>
+              </button>
               {predRefreshing && <Spinner className="text-good" />}
             </div>
-            {predPathInfos?.length ? (
-              <SeriesPicker
-                paths={predPathInfos}
-                selected={selected}
-                onToggle={toggle}
-                keyPrefix={PRED_PREFIX}
-                color={() => PRED_COLOR}
-              />
-            ) : (
-              <p className="px-1 text-xs text-text-muted">
-                {predRefreshing ? "Projecting next interval…" : "No prediction yet."}
-              </p>
-            )}
+            {predOpen &&
+              (predPathInfos?.length ? (
+                <SeriesPicker
+                  paths={predPathInfos}
+                  selected={selected}
+                  onToggle={toggle}
+                  keyPrefix={PRED_PREFIX}
+                  color={() => PRED_COLOR}
+                />
+              ) : (
+                <p className="px-1 text-xs text-text-muted">
+                  {predRefreshing ? "Projecting next interval…" : "No prediction yet."}
+                </p>
+              ))}
           </div>
         </div>
       </aside>

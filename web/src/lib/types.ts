@@ -306,7 +306,8 @@ export interface BacktestAnalysis {
 
 export interface PredictionSeries {
   path: string;
-  points: Point[];
+  points: Point[]; // walk-forward history projections
+  ahead: Point | null; // the single one-step-ahead projection
 }
 
 export interface PredictionSeriesResponse {

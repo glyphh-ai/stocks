@@ -252,10 +252,12 @@ def prediction_paths(session: Session, symbol: str, interval: str) -> list[dict]
 
 def prediction_value_series(
     session: Session, symbol: str, interval: str, role_path: str
-) -> list[tuple[datetime, float | None]]:
+) -> list[tuple[datetime, float | None, str]]:
     """Predicted scalar value of a signal across the stored predictions, ordered
     by the interval being predicted — the history walk-forward plus the single
-    one-step-ahead point. role_path is 'role:<layer>/<segment>/<role>'."""
+    one-step-ahead point. Each tuple carries its horizon ('history' | 'ahead')
+    so the caller can render the ahead step distinctly. role_path is
+    'role:<layer>/<segment>/<role>'."""
     _, body = role_path.split(":", 1) if ":" in role_path else ("role", role_path)
     layer_key, segment_key, role_key = body.split("/")
     rows = (
@@ -268,7 +270,11 @@ def prediction_value_series(
         .all()
     )
     return [
-        (r.target_ts, _extract_role_value(r.glyph, layer_key, segment_key, role_key))
+        (
+            r.target_ts,
+            _extract_role_value(r.glyph, layer_key, segment_key, role_key),
+            r.horizon,
+        )
         for r in rows
     ]
 

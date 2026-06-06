@@ -23,7 +23,9 @@ export type TradeMarker = SeriesMarker<Time>;
 
 // Predicted series carry a "pred:" path prefix so they coexist with the actual
 // series and render distinctly — a green dashed projection over the real line.
+// The one-step-ahead segment uses a "predahead:" prefix and renders dotted.
 const PRED_PREFIX = "pred:";
+const PRED_AHEAD_PREFIX = "predahead:";
 const PRED_COLOR = "#16a34a";
 
 function cssVar(name: string): string {
@@ -121,15 +123,20 @@ export function TrendChart({
     }
 
     for (const s of series) {
-      const isPred = s.path.startsWith(PRED_PREFIX);
+      const isAhead = s.path.startsWith(PRED_AHEAD_PREFIX);
+      const isPred = isAhead || s.path.startsWith(PRED_PREFIX);
       let line = seriesMap.current.get(s.path);
       if (!line) {
         line = chart.addSeries(LineSeries, {
           color: isPred ? PRED_COLOR : colorForPath(s.path),
           lineWidth: 2,
-          lineStyle: isPred ? LineStyle.Dashed : LineStyle.Solid,
+          lineStyle: isAhead
+            ? LineStyle.Dotted
+            : isPred
+              ? LineStyle.Dashed
+              : LineStyle.Solid,
           priceLineVisible: false,
-          lastValueVisible: true,
+          lastValueVisible: !isAhead,
           crosshairMarkerRadius: 3,
         });
         seriesMap.current.set(s.path, line);

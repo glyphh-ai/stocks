@@ -99,7 +99,8 @@ class Point(BaseModel):
 
 class PredictionSeries(BaseModel):
     path: str
-    points: list[Point]
+    points: list[Point]  # walk-forward history projections
+    ahead: Point | None = None  # the single one-step-ahead projection
 
 
 class PredictionSeriesResponse(BaseModel):
@@ -168,16 +169,16 @@ def next_series(
     session = PgSession()
     try:
         sym = symbol.upper()
-        out = [
-            PredictionSeries(
-                path=p,
-                points=[
-                    Point(t=ts, v=v)
-                    for ts, v in prediction_value_series(session, sym, interval, p)
-                ],
+        out: list[PredictionSeries] = []
+        for p in path:
+            rows = prediction_value_series(session, sym, interval, p)
+            history_pts = [
+                Point(t=ts, v=v) for ts, v, h in rows if h != "ahead"
+            ]
+            ahead = next(
+                (Point(t=ts, v=v) for ts, v, h in rows if h == "ahead"), None
             )
-            for p in path
-        ]
+            out.append(PredictionSeries(path=p, points=history_pts, ahead=ahead))
         return PredictionSeriesResponse(symbol=sym, interval=interval, series=out)
     finally:
         session.close()
