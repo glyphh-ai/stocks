@@ -3,10 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
-import type { Metric, PathInfo, SeriesResponse, SymbolInfo } from "@/lib/types";
+import type { Metric, PathInfo, SeriesResponse, SymbolInfo, Trade } from "@/lib/types";
 import { colorForPath, shortLabel } from "@/lib/colors";
-import { TrendChart } from "./TrendChart";
+import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
+import { TradesButton } from "./TradesPanel";
+
+const LONG_COLOR = "#16a34a";
+const SHORT_COLOR = "#dc2626";
 
 const METRICS: { id: Metric; label: string; hint: string }[] = [
   { id: "baseline", label: "Drift vs base", hint: "Cosine distance from the first version" },
@@ -109,6 +113,35 @@ export function Dashboard() {
       setRunning(false);
     }
   };
+
+  const { data: trades, mutate: mutateTrades } = useSWR<Trade[]>(
+    symbol ? `/trades?${symbol}` : null,
+    () => api.trades(symbol),
+  );
+
+  const tradeMarkers = useMemo<TradeMarker[]>(() => {
+    const out: TradeMarker[] = [];
+    for (const t of trades ?? []) {
+      const sec = (ts: string) => Math.floor(new Date(ts).getTime() / 1000);
+      out.push({
+        time: sec(t.entry_ts) as TradeMarker["time"],
+        position: t.side === "long" ? "belowBar" : "aboveBar",
+        shape: t.side === "long" ? "arrowUp" : "arrowDown",
+        color: t.side === "long" ? LONG_COLOR : SHORT_COLOR,
+        text: `${t.side === "long" ? "L" : "S"} ${t.entry_price}`,
+      });
+      if (t.status === "closed" && t.exit_ts != null) {
+        out.push({
+          time: sec(t.exit_ts) as TradeMarker["time"],
+          position: t.side === "long" ? "aboveBar" : "belowBar",
+          shape: t.side === "long" ? "arrowDown" : "arrowUp",
+          color: (t.pnl ?? 0) >= 0 ? LONG_COLOR : SHORT_COLOR,
+          text: `exit ${t.exit_price}`,
+        });
+      }
+    }
+    return out.sort((a, b) => (a.time as number) - (b.time as number));
+  }, [trades]);
 
   const toggle = (path: string) =>
     setSelected((prev) => {
@@ -224,6 +257,7 @@ export function Dashboard() {
                 </button>
               ))}
             </div>
+            <TradesButton symbol={symbol} interval={interval} onChanged={() => mutateTrades()} />
             <button
               onClick={runNow}
               disabled={!symbol || running}
@@ -261,7 +295,7 @@ export function Dashboard() {
 
         <div className="relative min-h-0 flex-1 p-2">
           {symbol && selectedPaths.length > 0 ? (
-            <TrendChart series={seriesData?.series ?? []} />
+            <TrendChart series={seriesData?.series ?? []} markers={tradeMarkers} />
           ) : (
             <div className="grid h-full place-items-center text-sm text-text-muted">
               {symbol ? "Select a role, segment, layer, or the cortex to chart." : "No stocks configured yet."}

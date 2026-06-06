@@ -125,6 +125,48 @@ export interface RunResponse {
   roles: Record<string, unknown>;
 }
 
+// ---- Trades ----
+
+export type TradeSide = "long" | "short";
+export type TradeStatus = "open" | "closed";
+
+export interface Trade {
+  id: number;
+  symbol: string;
+  interval: string;
+  side: TradeSide;
+  status: TradeStatus;
+  entry_ts: string;
+  entry_price: number;
+  volume: number;
+  stop: number | null;
+  entry_version_id: number | null;
+  exit_ts: string | null;
+  exit_price: number | null;
+  exit_version_id: number | null;
+  pnl: number | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TradeOpenInput {
+  symbol: string;
+  interval: string;
+  side: TradeSide;
+  entry_ts: string;
+  entry_price: number;
+  volume: number;
+  stop?: number | null;
+  notes?: string | null;
+}
+
+export interface TradeCloseInput {
+  exit_ts: string;
+  exit_price: number;
+  notes?: string | null;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

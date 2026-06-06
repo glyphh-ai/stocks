@@ -7,13 +7,19 @@ import {
   LineSeries,
   LineStyle,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useTheme } from "next-themes";
 import type { Series } from "@/lib/types";
 import { colorForPath } from "@/lib/colors";
+
+export type TradeMarker = SeriesMarker<Time>;
 
 function cssVar(name: string): string {
   if (typeof window === "undefined") return "";
@@ -32,10 +38,18 @@ function toData(points: Series["points"]) {
     .map(([time, value]) => ({ time: time as UTCTimestamp, value }));
 }
 
-export function TrendChart({ series }: { series: Series[] }) {
+export function TrendChart({
+  series,
+  markers = [],
+}: {
+  series: Series[];
+  markers?: TradeMarker[];
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesMap = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const markerHostRef = useRef<ISeriesApi<"Line"> | null>(null);
   const { resolvedTheme } = useTheme();
 
   // Create the chart once.
@@ -67,6 +81,8 @@ export function TrendChart({ series }: { series: Series[] }) {
       chart.remove();
       chartRef.current = null;
       seriesMap.current.clear();
+      markersRef.current = null;
+      markerHostRef.current = null;
     };
   }, []);
 
@@ -114,6 +130,21 @@ export function TrendChart({ series }: { series: Series[] }) {
       line.setData(toData(s.points));
     }
   }, [series]);
+
+  // Attach trade markers to the first (primary) visible series. Re-create the
+  // plugin when that host series object changes (toggled off/on); otherwise
+  // just update the marker set.
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const host = series[0] ? seriesMap.current.get(series[0].path) ?? null : null;
+    if (host !== markerHostRef.current) {
+      markersRef.current?.detach();
+      markersRef.current = host ? createSeriesMarkers(host, markers) : null;
+      markerHostRef.current = host;
+    } else {
+      markersRef.current?.setMarkers(markers);
+    }
+  }, [series, markers]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

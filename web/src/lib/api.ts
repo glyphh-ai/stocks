@@ -14,6 +14,9 @@ import type {
   TemplateMeta,
   TestSegmentResponse,
   ToolSpec,
+  Trade,
+  TradeCloseInput,
+  TradeOpenInput,
 } from "./types";
 
 export const API_BASE =
@@ -87,6 +90,23 @@ export const api = {
     }),
 
   tools: () => http<ToolSpec[]>("/tools"),
+
+  trades: (symbol?: string, interval?: string) => {
+    const qs = new URLSearchParams();
+    if (symbol) qs.set("symbol", symbol);
+    if (interval) qs.set("interval", interval);
+    const q = qs.toString();
+    return http<Trade[]>(`/trades${q ? `?${q}` : ""}`);
+  },
+  openTrade: (input: TradeOpenInput) =>
+    http<Trade>("/trades", { method: "POST", body: JSON.stringify(input) }),
+  closeTrade: (id: number, input: TradeCloseInput) =>
+    http<Trade>(`/trades/${id}/close`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  deleteTrade: (id: number) =>
+    http<{ deleted: number }>(`/trades/${id}`, { method: "DELETE" }),
 
   credentials: () => http<CredentialMeta[]>("/credentials"),
   saveCredential: (name: string, kind: CredKind, fields: Record<string, string>) =>
