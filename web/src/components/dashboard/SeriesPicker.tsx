@@ -1,16 +1,89 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { PathInfo } from "@/lib/types";
-import { colorForPath, shortLabel } from "@/lib/colors";
+import { colorForPath } from "@/lib/colors";
 
-const GROUP_ORDER = ["cortex", "layer", "segment", "role"] as const;
-const GROUP_LABEL: Record<string, string> = {
-  cortex: "Cortex",
-  layer: "Layers",
-  segment: "Segments",
-  role: "Roles",
+type Kind = "cortex" | "layer" | "segment" | "role";
+
+interface Node {
+  path: string;
+  label: string;
+  kind: Kind;
+  children: Node[];
+}
+
+function buildTree(paths: PathInfo[]): { cortex: Node | null; layers: Node[] } {
+  const layerMap = new Map<string, Node>();
+  const segMap = new Map<string, Node>();
+  let cortex: Node | null = null;
+
+  const ensureLayer = (key: string): Node => {
+    let n = layerMap.get(key);
+    if (!n) {
+      n = { path: `layer:${key}`, label: key, kind: "layer", children: [] };
+      layerMap.set(key, n);
+    }
+    return n;
+  };
+
+  const ensureSeg = (layerKey: string, segKey: string): Node => {
+    const k = `${layerKey}/${segKey}`;
+    let n = segMap.get(k);
+    if (!n) {
+      n = { path: `segment:${k}`, label: segKey, kind: "segment", children: [] };
+      segMap.set(k, n);
+      ensureLayer(layerKey).children.push(n);
+    }
+    return n;
+  };
+
+  for (const p of paths) {
+    if (p.level === "cortex") {
+      cortex = { path: "cortex", label: "cortex", kind: "cortex", children: [] };
+    } else if (p.level === "layer") {
+      ensureLayer(p.path.slice("layer:".length));
+    } else if (p.level === "segment") {
+      const [lk, sk] = p.path.slice("segment:".length).split("/");
+      ensureSeg(lk, sk);
+    } else {
+      const [lk, sk, rk] = p.path.slice("role:".length).split("/");
+      ensureSeg(lk, sk).children.push({
+        path: p.path,
+        label: rk,
+        kind: "role",
+        children: [],
+      });
+    }
+  }
+
+  return { cortex, layers: [...layerMap.values()] };
+}
+
+const KIND_LABEL: Record<Kind, string> = {
+  cortex: "cortex",
+  layer: "layer",
+  segment: "segment",
+  role: "role",
 };
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
 
 export function SeriesPicker({
   paths,
@@ -21,54 +94,78 @@ export function SeriesPicker({
   selected: Set<string>;
   onToggle: (path: string) => void;
 }) {
-  const groups = useMemo(() => {
-    const m = new Map<string, PathInfo[]>();
-    for (const p of paths) {
-      const arr = m.get(p.level) ?? [];
-      arr.push(p);
-      m.set(p.level, arr);
-    }
-    return m;
-  }, [paths]);
+  const { cortex, layers } = useMemo(() => buildTree(paths), [paths]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggleCollapse = (path: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+
+  const renderNode = (node: Node) => {
+    const on = selected.has(node.path);
+    const hasChildren = node.children.length > 0;
+    const isOpen = !collapsed.has(node.path);
+    const weight =
+      node.kind === "layer"
+        ? "font-semibold"
+        : node.kind === "segment"
+          ? "font-medium"
+          : "font-normal";
+
+    return (
+      <div key={node.path}>
+        <div className="flex items-center gap-0.5">
+          {hasChildren ? (
+            <button
+              onClick={() => toggleCollapse(node.path)}
+              aria-label={isOpen ? "Collapse" : "Expand"}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded text-text-muted hover:text-text"
+            >
+              <Chevron open={isOpen} />
+            </button>
+          ) : (
+            <span className="w-5 shrink-0" />
+          )}
+          <button
+            onClick={() => onToggle(node.path)}
+            title={KIND_LABEL[node.kind]}
+            className={`group flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm transition-colors ${
+              on ? "bg-surface-3" : "hover:bg-surface-2"
+            }`}
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full transition-opacity"
+              style={{
+                backgroundColor: colorForPath(node.path),
+                opacity: on ? 1 : 0.25,
+              }}
+            />
+            <span
+              className={`truncate ${weight} ${
+                on ? "text-text" : "text-text-muted group-hover:text-text"
+              }`}
+            >
+              {node.label}
+            </span>
+          </button>
+        </div>
+        {hasChildren && isOpen && (
+          <div className="ml-[1.4rem] border-l border-border/60 pl-1">
+            {node.children.map(renderNode)}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="flex flex-col gap-4">
-      {GROUP_ORDER.map((level) => {
-        const items = groups.get(level);
-        if (!items?.length) return null;
-        return (
-          <div key={level}>
-            <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-              {GROUP_LABEL[level]}
-            </div>
-            <div className="flex flex-col gap-0.5">
-              {items.map((p) => {
-                const on = selected.has(p.path);
-                return (
-                  <button
-                    key={p.path}
-                    onClick={() => onToggle(p.path)}
-                    className={`group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                      on ? "bg-surface-3" : "hover:bg-surface-2"
-                    }`}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full transition-opacity"
-                      style={{
-                        backgroundColor: colorForPath(p.path),
-                        opacity: on ? 1 : 0.25,
-                      }}
-                    />
-                    <span className={`truncate ${on ? "text-text" : "text-text-muted group-hover:text-text"}`}>
-                      {shortLabel(p.path)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-0.5">
+      {cortex && renderNode(cortex)}
+      {layers.map(renderNode)}
     </div>
   );
 }
