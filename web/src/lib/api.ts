@@ -15,6 +15,7 @@ import type {
   TestSegmentResponse,
   ToolSpec,
   Trade,
+  TradeAnalysis,
   TradeCloseInput,
   TradeOpenInput,
 } from "./types";
@@ -105,6 +106,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  analyzeTrade: (id: number) =>
+    http<TradeAnalysis>(`/trades/${id}/analyze`, { method: "POST" }),
   deleteTrade: (id: number) =>
     http<{ deleted: number }>(`/trades/${id}`, { method: "DELETE" }),
 

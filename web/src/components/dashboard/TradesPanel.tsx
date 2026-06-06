@@ -3,8 +3,9 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
-import type { Trade } from "@/lib/types";
+import type { Trade, TradeAnalysis } from "@/lib/types";
 import { TradeModal } from "./TradeModal";
+import { AnalysisModal } from "./AnalysisModal";
 
 function fmtTs(ts: string): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -81,10 +82,21 @@ function TradesPanel({
   const [modal, setModal] = useState<
     { mode: "open" } | { mode: "close"; trade: Trade } | null
   >(null);
+  const [analysis, setAnalysis] = useState<TradeAnalysis | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<number | null>(null);
 
   const remove = async (id: number) => {
     await api.deleteTrade(id);
     onChanged();
+  };
+
+  const analyze = async (id: number) => {
+    setAnalyzingId(id);
+    try {
+      setAnalysis(await api.analyzeTrade(id));
+    } finally {
+      setAnalyzingId(null);
+    }
   };
 
   return (
@@ -157,6 +169,14 @@ function TradesPanel({
                     </span>
                   )}
                   <button
+                    onClick={() => analyze(t.id)}
+                    disabled={analyzingId === t.id}
+                    title="Analyze the glyph conditions around this trade"
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-text-muted hover:text-text disabled:opacity-40"
+                  >
+                    {analyzingId === t.id ? "…" : "Analyze"}
+                  </button>
+                  <button
                     onClick={() => remove(t.id)}
                     title="Delete trade"
                     className="shrink-0 text-text-muted hover:text-bad"
@@ -195,6 +215,9 @@ function TradesPanel({
           onClose={() => setModal(null)}
           onSaved={onChanged}
         />
+      )}
+      {analysis && (
+        <AnalysisModal data={analysis} onClose={() => setAnalysis(null)} />
       )}
     </div>
   );

@@ -167,6 +167,26 @@ export interface TradeCloseInput {
   notes?: string | null;
 }
 
+export interface AnalysisFactor {
+  factor: string;
+  observation: string;
+  influence: "supportive" | "adverse" | "neutral";
+}
+
+export interface TradeAnalysis {
+  conditions: {
+    layer_drift: Record<string, number> | null;
+    role_deltas: Record<string, number> | null;
+    [k: string]: unknown;
+  };
+  llm_available: boolean;
+  analysis: {
+    summary: string;
+    key_factors: AnalysisFactor[];
+    outlook: string;
+  };
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

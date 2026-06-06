@@ -17,6 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..analysis import analyze_trade
 from ..db import PgSession
 from ..models import Trade
 from ..storage import version_at_ts
@@ -149,6 +150,19 @@ def get_trade(trade_id: int) -> TradeOut:
         if trade is None:
             raise HTTPException(404, f"trade not found: {trade_id}")
         return TradeOut.model_validate(trade)
+    finally:
+        session.close()
+
+
+@router.post("/{trade_id}/analyze")
+async def analyze(trade_id: int) -> dict:
+    """LLM (or deterministic) read of the glyph conditions around a trade."""
+    session = PgSession()
+    try:
+        trade = session.get(Trade, trade_id)
+        if trade is None:
+            raise HTTPException(404, f"trade not found: {trade_id}")
+        return await analyze_trade(session, trade)
     finally:
         session.close()
 
