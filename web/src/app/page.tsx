@@ -44,7 +44,11 @@ export default function Home() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "dashboard" && <Dashboard />}
+        {/* Keep the dashboard mounted so its state (selection, symbol, an
+            in-progress seed) survives switching to another tab. */}
+        <div className={tab === "dashboard" ? "h-full" : "hidden"}>
+          <Dashboard />
+        </div>
         {tab === "trades" && <TradesTab />}
         {tab === "config" && <ConfigTab />}
         {tab === "settings" && <SettingsTab />}
