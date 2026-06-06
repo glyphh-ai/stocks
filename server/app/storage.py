@@ -42,6 +42,28 @@ def write_glyph(
     return version.id
 
 
+def version_at_ts(
+    session: Session, symbol: str, interval: str, ts: datetime
+) -> int | None:
+    """The glyph version whose timestamp is nearest to `ts` for symbol/interval.
+
+    Used to pin a trade leg to the HDC snapshot that best represents market
+    conditions at the moment of the trade. Returns None if no versions exist.
+    """
+    row = session.execute(
+        text(
+            """
+            SELECT id FROM glyph_version
+            WHERE symbol = :symbol AND interval = :interval
+            ORDER BY ABS(EXTRACT(EPOCH FROM (ts - :ts))) ASC
+            LIMIT 1
+            """
+        ),
+        {"symbol": symbol, "interval": interval, "ts": ts},
+    ).first()
+    return int(row.id) if row else None
+
+
 def drift_series(
     session: Session, symbol: str, interval: str, path: str = "cortex"
 ) -> list[tuple[datetime, float | None]]:

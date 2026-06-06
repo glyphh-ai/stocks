@@ -12,7 +12,15 @@ from __future__ import annotations
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -93,6 +101,50 @@ class Credential(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     kind: Mapped[str] = mapped_column(String(16))  # bearer | basic | header
     enc: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Trade(Base):
+    """A real trade the user pushed through their platform, recorded against
+    the glyph history.
+
+    The entry and (later) the exit each pin to the nearest glyph version at
+    their timestamp (entry_version_id / exit_version_id), so every trade is
+    aligned to the full HDC snapshot of market conditions at that moment. P&L
+    is realized only once the trade is closed.
+    """
+
+    __tablename__ = "trade"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    interval: Mapped[str] = mapped_column(String(8))
+    side: Mapped[str] = mapped_column(String(8))  # long | short
+    status: Mapped[str] = mapped_column(String(8), default="open")  # open | closed
+
+    entry_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    entry_price: Mapped[float] = mapped_column(Float)
+    volume: Mapped[float] = mapped_column(Float)
+    stop: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("glyph_version.id", ondelete="SET NULL"), nullable=True
+    )
+
+    exit_ts: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("glyph_version.id", ondelete="SET NULL"), nullable=True
+    )
+    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
