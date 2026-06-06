@@ -87,6 +87,43 @@ class GlyphTemplate(Base):
     )
 
 
+class GlyphPrediction(Base):
+    """A projected next-interval glyph, the output of the ensemble predictor.
+
+    Unlike GlyphVersion (a recorded *actual* snapshot), this is a *predicted*
+    one. `horizon` separates the walk-forward history rows — one predicted glyph
+    per past interval, predicted only from prior history — from the single
+    `ahead` row that projects the next, not-yet-printed interval. `components`
+    holds the per-signal contribution of each ensemble source (autoregressive,
+    beam, trades, llm) so a prediction can be explained and later scored against
+    what actually printed. Predictions are derived, so a refresh wipes and
+    rebuilds the whole set for a symbol/interval.
+    """
+
+    __tablename__ = "glyph_prediction"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    interval: Mapped[str] = mapped_column(String(8))
+    target_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True
+    )  # the interval being predicted
+    horizon: Mapped[str] = mapped_column(String(8))  # history | ahead
+    basis_versions: Mapped[int] = mapped_column()  # history points used
+    glyph: Mapped[dict] = mapped_column(JSONB)  # the projected instance JSON
+    components: Mapped[dict] = mapped_column(JSONB)  # per-signal source breakdown
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol", "interval", "target_ts", name="uq_prediction_bucket"
+        ),
+    )
+
+
 class Credential(Base):
     """An encrypted secret a tool step can reference by name.
 

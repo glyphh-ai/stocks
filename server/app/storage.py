@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .hdc import drift, encode_glyph
-from .models import GlyphNode, GlyphVersion
+from .models import GlyphNode, GlyphPrediction, GlyphVersion
 
 
 def write_glyph(
@@ -207,6 +207,86 @@ def value_series(
     for r in session.execute(sql, {"symbol": symbol, "interval": interval}):
         out.append((r.ts, _extract_role_value(r.glyph, layer_key, segment_key, role_key)))
     return out
+
+
+def _latest_prediction_glyph(
+    session: Session, symbol: str, interval: str
+) -> dict | None:
+    """The predicted glyph to derive the green tree from (prefer the ahead row)."""
+    row = (
+        session.query(GlyphPrediction)
+        .filter(
+            GlyphPrediction.symbol == symbol,
+            GlyphPrediction.interval == interval,
+        )
+        .order_by(
+            (GlyphPrediction.horizon == "ahead").desc(),
+            GlyphPrediction.target_ts.desc(),
+        )
+        .first()
+    )
+    return row.glyph if row else None
+
+
+def prediction_paths(session: Session, symbol: str, interval: str) -> list[dict]:
+    """Green-tree node paths for the predicted glyph: cortex, layers, segments,
+    and scalar *signal* roles only (symbol roles aren't predicted)."""
+    glyph = _latest_prediction_glyph(session, symbol, interval)
+    if not glyph:
+        return []
+    out: list[dict] = [{"level": "cortex", "path": "cortex"}]
+    for layer in glyph.get("layers", []):
+        lk = layer.get("key")
+        out.append({"level": "layer", "path": f"layer:{lk}"})
+        for seg in layer.get("segments", []):
+            sk = seg.get("key")
+            out.append({"level": "segment", "path": f"segment:{lk}/{sk}"})
+            for role in seg.get("roles", []):
+                if role.get("type", "symbol") != "scalar":
+                    continue
+                out.append(
+                    {"level": "role", "path": f"role:{lk}/{sk}/{role.get('key')}"}
+                )
+    return out
+
+
+def prediction_value_series(
+    session: Session, symbol: str, interval: str, role_path: str
+) -> list[tuple[datetime, float | None]]:
+    """Predicted scalar value of a signal across the stored predictions, ordered
+    by the interval being predicted — the history walk-forward plus the single
+    one-step-ahead point. role_path is 'role:<layer>/<segment>/<role>'."""
+    _, body = role_path.split(":", 1) if ":" in role_path else ("role", role_path)
+    layer_key, segment_key, role_key = body.split("/")
+    rows = (
+        session.query(GlyphPrediction)
+        .filter(
+            GlyphPrediction.symbol == symbol,
+            GlyphPrediction.interval == interval,
+        )
+        .order_by(GlyphPrediction.target_ts)
+        .all()
+    )
+    return [
+        (r.target_ts, _extract_role_value(r.glyph, layer_key, segment_key, role_key))
+        for r in rows
+    ]
+
+
+def latest_prediction(
+    session: Session, symbol: str, interval: str
+) -> GlyphPrediction | None:
+    """The one-step-ahead projection row, if any."""
+    return (
+        session.query(GlyphPrediction)
+        .filter(
+            GlyphPrediction.symbol == symbol,
+            GlyphPrediction.interval == interval,
+            GlyphPrediction.horizon == "ahead",
+        )
+        .order_by(GlyphPrediction.target_ts.desc())
+        .first()
+    )
 
 
 def _extract_role_value(
