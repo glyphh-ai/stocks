@@ -5,6 +5,8 @@ import type {
   GlyphTemplate,
   Metric,
   PathInfo,
+  QuoteResponse,
+  RunResponse,
   Segment,
   SeriesResponse,
   SymbolInfo,
@@ -73,6 +75,15 @@ export const api = {
     http<BackfillResponse>("/jobs/backfill", {
       method: "POST",
       body: JSON.stringify({ symbol, range, interval }),
+    }),
+
+  quote: (symbol: string) =>
+    http<QuoteResponse>(`/jobs/quote?symbol=${encodeURIComponent(symbol)}`),
+
+  run: (symbol: string, interval: string) =>
+    http<RunResponse>("/jobs/run", {
+      method: "POST",
+      body: JSON.stringify({ symbol, interval }),
     }),
 
   tools: () => http<ToolSpec[]>("/tools"),

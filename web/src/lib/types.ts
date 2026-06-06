@@ -109,6 +109,22 @@ export interface BackfillResponse {
   last_ts: string | null;
 }
 
+export interface QuoteResponse {
+  symbol: string;
+  price: number;
+  prev_close: number | null;
+  currency: string;
+  ts: string | null;
+}
+
+export interface RunResponse {
+  version_id: number;
+  symbol: string;
+  interval: string;
+  ts: string;
+  roles: Record<string, unknown>;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

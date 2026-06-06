@@ -35,6 +35,9 @@ export function Dashboard() {
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
 
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
   const resetView = () => {
     setMetric(DEFAULT_METRIC);
     setSelected(new Set(DEFAULT_SELECTION));
@@ -87,11 +90,25 @@ export function Dashboard() {
     ? `/series?${symbol}&${interval}&${metric}&${selectedPaths.join(",")}`
     : null;
 
-  const { data: seriesData } = useSWR<SeriesResponse>(
+  const { data: seriesData, mutate: mutateSeries } = useSWR<SeriesResponse>(
     seriesKey,
     () => api.series(symbol, interval, metric, selectedPaths),
     { refreshInterval: REFRESH_MS, keepPreviousData: true },
   );
+
+  const runNow = async () => {
+    if (!symbol) return;
+    setRunning(true);
+    setRunError(null);
+    try {
+      await api.run(symbol, interval);
+      await Promise.all([mutateSymbols(), mutateSeries()]);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "Run failed");
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const toggle = (path: string) =>
     setSelected((prev) => {
@@ -208,6 +225,14 @@ export function Dashboard() {
               ))}
             </div>
             <button
+              onClick={runNow}
+              disabled={!symbol || running}
+              title="Run the glyph job now and append a live version"
+              className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {running ? "Running…" : "Run now"}
+            </button>
+            <button
               onClick={resetView}
               title="Reset metric and selection to defaults"
               className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:text-text"
@@ -216,6 +241,11 @@ export function Dashboard() {
             </button>
           </div>
         </div>
+        {runError && (
+          <div className="shrink-0 border-b border-border bg-bad/10 px-4 py-1.5 text-xs text-bad">
+            {runError}
+          </div>
+        )}
 
         {/* Legend */}
         {selectedPaths.length > 0 && (

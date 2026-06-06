@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from ..db import PgSession
 from ..jobs import default_executor, run_glyph
-from ..jobs.history import fetch_ohlc
+from ..jobs.history import fetch_ohlc, fetch_quote
 from ..jobs.runner import run_segment
 from ..models import GlyphNode, GlyphVersion
 from ..storage import write_glyph
@@ -216,6 +216,25 @@ def backfill(req: BackfillRequest) -> BackfillResponse:
         first_ts=bars[0]["ts"],
         last_ts=bars[-1]["ts"],
     )
+
+
+class QuoteResponse(BaseModel):
+    symbol: str
+    price: float
+    prev_close: float | None = None
+    currency: str = "USD"
+    ts: str | None = None
+
+
+@router.get("/quote", response_model=QuoteResponse)
+def quote(symbol: str) -> QuoteResponse:
+    """Live market quote for a symbol (Yahoo, no key). Drives the trade modal."""
+    try:
+        return QuoteResponse(**fetch_quote(symbol))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - upstream/network failure
+        raise HTTPException(502, f"quote fetch failed: {exc}") from exc
 
 
 @router.post("/run", response_model=RunResponse)

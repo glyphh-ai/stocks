@@ -68,14 +68,34 @@ async def run_segment(
 async def run_layer(
     layer: dict, base_ctx: dict[str, Any], executor: LLMExecutor
 ) -> dict[str, dict[str, Any]]:
+    """Run a layer's segments. A segment that fails yields no role values; the
+    run still proceeds and run_glyph backfills those roles with defaults, so one
+    broken segment (e.g. an llm step with no API key) never aborts the run."""
     segments = layer.get("segments", [])
     if layer.get("execution") == "parallel":
         results = await asyncio.gather(
-            *(run_segment(s, base_ctx, executor) for s in segments)
+            *(run_segment(s, base_ctx, executor) for s in segments),
+            return_exceptions=True,
         )
     else:
-        results = [await run_segment(s, base_ctx, executor) for s in segments]
-    return {s["key"]: r for s, r in zip(segments, results)}
+        results = []
+        for s in segments:
+            try:
+                results.append(await run_segment(s, base_ctx, executor))
+            except Exception as exc:  # noqa: BLE001 - degrade, don't abort
+                results.append(exc)
+    return {
+        s["key"]: (r if isinstance(r, dict) else {})
+        for s, r in zip(segments, results)
+    }
+
+
+def _fallback_value(role: dict[str, Any], symbol: str, interval: str) -> Any:
+    """A neutral value for a role no job step filled, so encoding never crashes."""
+    if role.get("type") == "symbol":
+        return interval if role["key"] == "interval" else symbol
+    lo, hi = role.get("range") or [0.0, 1.0]
+    return (float(lo) + float(hi)) / 2.0
 
 
 async def run_glyph(
@@ -89,6 +109,7 @@ async def run_glyph(
     """Run all jobs, fill the template, persist a new version. Layers run in order."""
     base_ctx = {"symbol": symbol, "interval": interval}
     filled = copy.deepcopy(template)
+    filled["symbol"] = symbol
     filled["interval"] = interval
 
     for layer in filled.get("layers", []):
@@ -98,6 +119,8 @@ async def run_glyph(
             for role in seg.get("roles", []):
                 if role["key"] in values:
                     role["value"] = values[role["key"]]
+                elif "value" not in role:
+                    role["value"] = _fallback_value(role, symbol, interval)
 
     version_id = write_glyph(session, symbol, interval, ts, filled)
     return version_id, filled

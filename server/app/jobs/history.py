@@ -52,3 +52,37 @@ def fetch_ohlc(symbol: str, range_: str = "6mo", interval: str = "1d") -> list[d
             }
         )
     return bars
+
+
+def fetch_quote(symbol: str) -> dict:
+    """Return the latest live quote {symbol, price, prev_close, currency, ts}.
+
+    Reads Yahoo's chart meta (regularMarketPrice), which updates intraday with
+    no API key. Raises ValueError if the symbol has no quote.
+    """
+    url = _CHART + urllib.parse.quote(symbol) + "?range=1d&interval=1m"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+        data = json.loads(resp.read())
+
+    result = (data.get("chart", {}).get("result") or [None])[0]
+    meta = (result or {}).get("meta") or {}
+    price = meta.get("regularMarketPrice")
+    if price is None:
+        raise ValueError(f"no quote for {symbol!r}")
+    ts = meta.get("regularMarketTime")
+    return {
+        "symbol": meta.get("symbol", symbol.upper()),
+        "price": float(price),
+        "prev_close": (
+            float(meta["chartPreviousClose"])
+            if meta.get("chartPreviousClose") is not None
+            else None
+        ),
+        "currency": meta.get("currency", "USD"),
+        "ts": (
+            datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            if ts is not None
+            else None
+        ),
+    }
