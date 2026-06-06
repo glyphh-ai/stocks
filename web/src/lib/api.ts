@@ -8,9 +8,12 @@ import type {
   CredKind,
   GlyphTemplate,
   Metric,
+  NextPredictionResponse,
   PathInfo,
   PredictionResponse,
+  PredictionSeriesResponse,
   QuoteResponse,
+  RefreshPredictionsResponse,
   RunResponse,
   Segment,
   SeriesResponse,
@@ -117,6 +120,26 @@ export const api = {
       `/predict/backtest/analyze?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
       { method: "POST" },
     ),
+
+  // Persisted ensemble predictor (green tree).
+  refreshPredictions: (symbol: string, interval: string, withLlm = false) =>
+    http<RefreshPredictionsResponse>(
+      `/predict/next/refresh?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&with_llm=${withLlm}`,
+      { method: "POST" },
+    ),
+  nextPrediction: (symbol: string, interval: string) =>
+    http<NextPredictionResponse>(
+      `/predict/next?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
+  predictionPaths: (symbol: string, interval: string) =>
+    http<PathInfo[]>(
+      `/predict/next/paths?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+    ),
+  predictionSeries: (symbol: string, interval: string, paths: string[]) => {
+    const qs = new URLSearchParams({ symbol, interval });
+    for (const p of paths) qs.append("path", p);
+    return http<PredictionSeriesResponse>(`/predict/next/series?${qs.toString()}`);
+  },
 
   tools: () => http<ToolSpec[]>("/tools"),
 

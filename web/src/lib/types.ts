@@ -302,6 +302,52 @@ export interface BacktestAnalysis {
   analysis: BacktestAnalysisBody;
 }
 
+// ---- Ensemble next-glyph prediction (persisted, green tree) ----
+
+export interface PredictionSeries {
+  path: string;
+  points: Point[];
+}
+
+export interface PredictionSeriesResponse {
+  symbol: string;
+  interval: string;
+  series: PredictionSeries[];
+}
+
+export interface SignalComponents {
+  autoregressive: number | null;
+  beam: number | null;
+  trades: number;
+  llm: number;
+  from: number;
+  final: number;
+  delta: number;
+}
+
+export interface NextPredictionBody {
+  target_ts: string;
+  basis_versions: number;
+  confidence: number;
+  components: Record<string, SignalComponents>;
+  glyph: GlyphTemplate;
+}
+
+export interface NextPredictionResponse {
+  symbol: string;
+  interval: string;
+  prediction: NextPredictionBody | null;
+}
+
+export interface RefreshPredictionsResponse {
+  symbol: string;
+  interval: string;
+  history_rows: number;
+  ahead: unknown;
+  llm_available?: boolean;
+  note: string | null;
+}
+
 // ---- Tool palette ----
 
 export interface ToolParam {

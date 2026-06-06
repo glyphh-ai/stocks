@@ -21,6 +21,11 @@ import { colorForPath } from "@/lib/colors";
 
 export type TradeMarker = SeriesMarker<Time>;
 
+// Predicted series carry a "pred:" path prefix so they coexist with the actual
+// series and render distinctly — a green dashed projection over the real line.
+const PRED_PREFIX = "pred:";
+const PRED_COLOR = "#16a34a";
+
 function cssVar(name: string): string {
   if (typeof window === "undefined") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -116,11 +121,13 @@ export function TrendChart({
     }
 
     for (const s of series) {
+      const isPred = s.path.startsWith(PRED_PREFIX);
       let line = seriesMap.current.get(s.path);
       if (!line) {
         line = chart.addSeries(LineSeries, {
-          color: colorForPath(s.path),
+          color: isPred ? PRED_COLOR : colorForPath(s.path),
           lineWidth: 2,
+          lineStyle: isPred ? LineStyle.Dashed : LineStyle.Solid,
           priceLineVisible: false,
           lastValueVisible: true,
           crosshairMarkerRadius: 3,

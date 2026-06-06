@@ -89,13 +89,20 @@ export function SeriesPicker({
   paths,
   selected,
   onToggle,
+  keyPrefix = "",
+  color,
 }: {
   paths: PathInfo[];
   selected: Set<string>;
   onToggle: (path: string) => void;
+  /** Prefix applied to selection keys so two trees can share one Set. */
+  keyPrefix?: string;
+  /** Override the per-node dot color (e.g. green for predictions). */
+  color?: (path: string) => string;
 }) {
   const { cortex, layers } = useMemo(() => buildTree(paths), [paths]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const dotColor = color ?? colorForPath;
 
   const toggleCollapse = (path: string) =>
     setCollapsed((prev) => {
@@ -106,7 +113,8 @@ export function SeriesPicker({
     });
 
   const renderNode = (node: Node) => {
-    const on = selected.has(node.path);
+    const key = keyPrefix + node.path;
+    const on = selected.has(key);
     const hasChildren = node.children.length > 0;
     const isOpen = !collapsed.has(node.path);
     const weight =
@@ -131,7 +139,7 @@ export function SeriesPicker({
             <span className="w-5 shrink-0" />
           )}
           <button
-            onClick={() => onToggle(node.path)}
+            onClick={() => onToggle(key)}
             title={KIND_LABEL[node.kind]}
             className={`group flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm transition-colors ${
               on ? "bg-surface-3" : "hover:bg-surface-2"
@@ -140,7 +148,7 @@ export function SeriesPicker({
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full transition-opacity"
               style={{
-                backgroundColor: colorForPath(node.path),
+                backgroundColor: dotColor(node.path),
                 opacity: on ? 1 : 0.25,
               }}
             />

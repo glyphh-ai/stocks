@@ -7,11 +7,16 @@ import type {
   Metric,
   PathInfo,
   PredictionResponse,
+  PredictionSeriesResponse,
+  Series,
   SeriesResponse,
   SymbolInfo,
   Trade,
 } from "@/lib/types";
 import { colorForPath, shortLabel } from "@/lib/colors";
+
+const PRED_PREFIX = "pred:";
+const PRED_COLOR = "#16a34a";
 import { TrendChart, type TradeMarker } from "./TrendChart";
 import { SeriesPicker } from "./SeriesPicker";
 import { TradesButton } from "./TradesPanel";
@@ -105,15 +110,76 @@ export function Dashboard() {
   );
 
   const selectedPaths = useMemo(() => [...selected], [selected]);
-  const seriesKey = symbol
-    ? `/series?${symbol}&${interval}&${metric}&${selectedPaths.join(",")}`
+  // Selection holds both actual paths and "pred:"-prefixed prediction paths.
+  const actualPaths = useMemo(
+    () => selectedPaths.filter((p) => !p.startsWith(PRED_PREFIX)),
+    [selectedPaths],
+  );
+  const predPaths = useMemo(
+    () => selectedPaths.filter((p) => p.startsWith(PRED_PREFIX)).map((p) => p.slice(PRED_PREFIX.length)),
+    [selectedPaths],
+  );
+
+  const seriesKey = symbol && actualPaths.length
+    ? `/series?${symbol}&${interval}&${metric}&${actualPaths.join(",")}`
     : null;
 
   const { data: seriesData, mutate: mutateSeries } = useSWR<SeriesResponse>(
     seriesKey,
-    () => api.series(symbol, interval, metric, selectedPaths),
+    () => api.series(symbol, interval, metric, actualPaths),
     { refreshInterval: REFRESH_MS, keepPreviousData: true },
   );
+
+  const { data: predPathInfos, mutate: mutatePredPaths } = useSWR<PathInfo[]>(
+    symbol ? `/predict/next/paths?${symbol}&${interval}` : null,
+    () => api.predictionPaths(symbol, interval),
+  );
+
+  const predSeriesKey = symbol && predPaths.length
+    ? `/predict/next/series?${symbol}&${interval}&${predPaths.join(",")}`
+    : null;
+
+  const { data: predSeriesData, mutate: mutatePredSeries } =
+    useSWR<PredictionSeriesResponse>(
+      predSeriesKey,
+      () => api.predictionSeries(symbol, interval, predPaths),
+      { refreshInterval: REFRESH_MS, keepPreviousData: true },
+    );
+
+  const [predRefreshing, setPredRefreshing] = useState(false);
+
+  // Predicted signal lines, tagged with a "pred:" path so the chart draws them
+  // green and dashed alongside the actual series.
+  const chartSeries = useMemo<Series[]>(() => {
+    const actual = seriesData?.series ?? [];
+    const predicted = (predSeriesData?.series ?? []).map((s) => ({
+      path: `${PRED_PREFIX}${s.path}`,
+      metric: "value" as Metric,
+      points: s.points,
+    }));
+    return [...actual, ...predicted];
+  }, [seriesData, predSeriesData]);
+
+  // Always (re)run the prediction when the chart loads a symbol/interval. The
+  // LLM nudge only shapes the forward row, so load uses the fast no-LLM rebuild;
+  // a full LLM-influenced refresh fires on Run now.
+  useEffect(() => {
+    if (!symbol) return;
+    let alive = true;
+    setPredRefreshing(true);
+    api
+      .refreshPredictions(symbol, interval, false)
+      .then(() => {
+        if (!alive) return;
+        mutatePredPaths();
+        mutatePredSeries();
+      })
+      .catch(() => {})
+      .finally(() => alive && setPredRefreshing(false));
+    return () => {
+      alive = false;
+    };
+  }, [symbol, interval, mutatePredPaths, mutatePredSeries]);
 
   const runNow = async () => {
     if (!symbol) return;
@@ -122,10 +188,15 @@ export function Dashboard() {
     try {
       await api.run(symbol, interval);
       await Promise.all([mutateSymbols(), mutateSeries()]);
+      // A new actual version printed — re-project with the full ensemble (LLM).
+      setPredRefreshing(true);
+      await api.refreshPredictions(symbol, interval, true).catch(() => {});
+      await Promise.all([mutatePredPaths(), mutatePredSeries()]);
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "Run failed");
     } finally {
       setRunning(false);
+      setPredRefreshing(false);
     }
   };
 
@@ -145,7 +216,15 @@ export function Dashboard() {
   );
 
   const onHistoryCleared = async () => {
-    await Promise.all([mutateSymbols(), mutateSeries(), mutateTrades()]);
+    // Predictions are derived from history — rebuild (or clear) them too.
+    await api.refreshPredictions(symbol, interval, false).catch(() => {});
+    await Promise.all([
+      mutateSymbols(),
+      mutateSeries(),
+      mutateTrades(),
+      mutatePredPaths(),
+      mutatePredSeries(),
+    ]);
     resetView();
   };
 
@@ -253,6 +332,32 @@ export function Dashboard() {
           ) : (
             <p className="px-1 text-sm text-text-muted">No nodes yet.</p>
           )}
+
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="mb-1.5 flex items-center justify-between px-1">
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: PRED_COLOR }}
+                />
+                Prediction
+              </span>
+              {predRefreshing && <Spinner className="text-good" />}
+            </div>
+            {predPathInfos?.length ? (
+              <SeriesPicker
+                paths={predPathInfos}
+                selected={selected}
+                onToggle={toggle}
+                keyPrefix={PRED_PREFIX}
+                color={() => PRED_COLOR}
+              />
+            ) : (
+              <p className="px-1 text-xs text-text-muted">
+                {predRefreshing ? "Projecting next interval…" : "No prediction yet."}
+              </p>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -347,18 +452,28 @@ export function Dashboard() {
         {/* Legend */}
         {selectedPaths.length > 0 && (
           <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2">
-            {selectedPaths.map((p) => (
-              <span key={p} className="flex items-center gap-1.5 text-xs">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colorForPath(p) }} />
-                <span className="text-text-muted">{shortLabel(p)}</span>
-              </span>
-            ))}
+            {selectedPaths.map((p) => {
+              const isPred = p.startsWith(PRED_PREFIX);
+              const raw = isPred ? p.slice(PRED_PREFIX.length) : p;
+              return (
+                <span key={p} className="flex items-center gap-1.5 text-xs">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: isPred ? PRED_COLOR : colorForPath(raw) }}
+                  />
+                  <span className="text-text-muted">
+                    {shortLabel(raw)}
+                    {isPred && " (pred)"}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         )}
 
         <div className="relative min-h-0 flex-1 p-2">
           {symbol && selectedPaths.length > 0 ? (
-            <TrendChart series={seriesData?.series ?? []} markers={tradeMarkers} />
+            <TrendChart series={chartSeries} markers={tradeMarkers} />
           ) : (
             <div className="grid h-full place-items-center text-sm text-text-muted">
               {symbol ? "Select a role, segment, layer, or the cortex to chart." : "No stocks configured yet."}
