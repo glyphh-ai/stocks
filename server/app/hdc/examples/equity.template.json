@@ -68,7 +68,7 @@
             { "key": "fed_tone", "type": "scalar", "range": [1, 10], "weight": 0.8 }
           ],
           "job": [
-            { "kind": "tool", "name": "yahoo_news", "args": { "symbol": "{symbol}" }, "out": "news" },
+            { "kind": "tool", "name": "news_headlines", "args": { "symbol": "{symbol}" }, "out": "news" },
             {
               "kind": "llm",
               "system": "You are an equity analyst. Judge how the supplied news affects the stock. Respond only with the structured score.",

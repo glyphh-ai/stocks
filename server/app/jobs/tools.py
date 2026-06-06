@@ -94,6 +94,96 @@ def yahoo_news(symbol: str, limit: int = 8) -> list[str]:
     return [t for t in titles if t][:limit]
 
 
+def _is_recent(ts: datetime | None, *, days: int = 2) -> bool:
+    """True when `ts` is unset or within `days` of now (i.e. the 'today' regime)."""
+    if ts is None:
+        return True
+    from datetime import timezone
+
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - ts).total_seconds() <= days * 86400.0
+
+
+def _gdelt_headlines(
+    query: str, ts: datetime, *, window_days: int = 3, limit: int = 8
+) -> list[str]:
+    """Headlines GDELT indexed in the `window_days` ending at `ts` (UTC).
+
+    Uses the DOC 2.0 archive, bounded by startdatetime/enddatetime so no article
+    dated after `ts` is ever returned — the historic news signal carries no
+    lookahead. Returns deduped titles, newest first.
+    """
+    import json
+    import urllib.parse
+    import urllib.request
+    from datetime import timedelta, timezone
+
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    fmt = "%Y%m%d%H%M%S"
+    params = urllib.parse.urlencode(
+        {
+            "query": f"{query} sourcelang:english",
+            "mode": "artlist",
+            "format": "json",
+            "maxrecords": 75,
+            "sort": "datedesc",
+            "startdatetime": (ts - timedelta(days=window_days)).strftime(fmt),
+            "enddatetime": ts.strftime(fmt),
+        }
+    )
+    url = "https://api.gdeltproject.org/api/v2/doc/doc?" + params
+    req = urllib.request.Request(url, headers={"User-Agent": "stocks/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+        raw = resp.read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # GDELT returns a plain-text notice (not JSON) for empty/over-broad queries.
+        return []
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for art in data.get("articles", []):
+        title = (art.get("title") or "").strip()
+        key = title.lower()
+        if title and key not in seen:
+            seen.add(key)
+            out.append(title)
+        if len(out) >= limit:
+            break
+    return out
+
+
+@tool(
+    "news_headlines",
+    description="Point-in-time headlines for a symbol: GDELT archive for historic ticks, Yahoo for today.",
+    params=[{"name": "symbol", "type": "symbol", "required": True}],
+    outputs=["(list of headlines)"],
+    config=[{"name": "window_days", "type": "number", "required": False}],
+)
+def news_headlines(
+    symbol: str,
+    ts: datetime | None = None,
+    limit: int = 8,
+    window_days: int = 3,
+    query: str | None = None,
+) -> list[str]:
+    """Headlines as-of `ts`. Recent/live ticks use Yahoo's curated finance feed;
+    older ticks use GDELT's archive for the window ending at `ts`, so historic
+    news reflects what was actually published then rather than today's feed.
+
+    `query` overrides the GDELT search (defaults to the symbol); `window_days`
+    is how many days of coverage leading up to the tick to include.
+    """
+    if _is_recent(ts):
+        return yahoo_news(symbol, limit=limit)
+    return _gdelt_headlines(
+        query or symbol, ts, window_days=max(int(window_days), 1), limit=limit
+    )
+
+
 @tool(
     "quote",
     description="Real point-in-time price/volume for a symbol (Yahoo, no key).",
